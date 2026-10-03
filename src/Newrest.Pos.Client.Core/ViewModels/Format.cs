@@ -10,4 +10,8 @@ public static class Format
     public static string Mad(decimal amount) => Amount(amount) + " MAD";
 
     public static string Amount(decimal amount) => amount.ToString("#,##0.00", French);
+
+    public static string Seconds(int milliseconds) => (milliseconds / 1000m).ToString("0.0", French) + " s";
+
+    public static string Percent(decimal rate) => (rate * 100).ToString("0", French) + " %";
 }

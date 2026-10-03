@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Newrest.Pos.Domain.Accounts;
+using Newrest.Pos.Domain.Catalog;
 using Newrest.Pos.Domain.Common;
 using Newrest.Pos.Domain.Sales;
 
@@ -33,6 +34,7 @@ public sealed class PosSaveChangesInterceptor(TimeProvider clock) : SaveChangesI
         }
 
         var now = clock.GetUtcNow();
+        TouchArticlesOfChangedPhotos(context);
         foreach (var entry in context.ChangeTracker.Entries())
         {
             if (entry.Entity is IImmutableRecord && entry.State is EntityState.Modified or EntityState.Deleted)
@@ -62,6 +64,17 @@ public sealed class PosSaveChangesInterceptor(TimeProvider clock) : SaveChangesI
                     ticket.ReceivedAt = now;
                     break;
             }
+        }
+    }
+
+    /// <summary>A photo added or removed changes its (tracked) article, so the article's row version moves and registers re-sync it.</summary>
+    private static void TouchArticlesOfChangedPhotos(DbContext context)
+    {
+        var articleIds = context.ChangeTracker.Entries<ArticlePhoto>()
+            .Where(e => e.State is EntityState.Added or EntityState.Deleted).Select(e => e.Entity.ArticleId).ToHashSet();
+        foreach (var article in context.ChangeTracker.Entries<Article>().Where(e => e.State == EntityState.Unchanged && articleIds.Contains(e.Entity.Id)))
+        {
+            article.State = EntityState.Modified;
         }
     }
 }

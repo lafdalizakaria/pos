@@ -7,6 +7,7 @@
   <SolidColorBrush x:Key="Line" Color="#E2E6EE" />
   <SolidColorBrush x:Key="Ok" Color="#0F7B3E" />
   <SolidColorBrush x:Key="Danger" Color="#B42318" />
+  <SolidColorBrush x:Key="ReviewBackground" Color="#FFF4CC" />
 
   <!-- Touch first: every actionable element is at least 64 px high. -->
   <Style x:Key="BigButton" TargetType="Button">

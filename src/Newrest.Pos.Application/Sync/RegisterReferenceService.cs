@@ -50,7 +50,7 @@ public sealed class RegisterReferenceService(IPosDbContext db, IRowVersionSource
         bool Changed(ulong rv) => full || (rv >= since && rv < upper);
 
         var categories = await db.Categories.AsNoTracking().Where(c => full || (c.RowVersion >= since && c.RowVersion < upper)).ToListAsync(ct);
-        var articles = await db.Articles.AsNoTracking().Where(a => full || (a.RowVersion >= since && a.RowVersion < upper)).ToListAsync(ct);
+        var articles = await db.Articles.AsNoTracking().Include(a => a.Photos).Where(a => full || (a.RowVersion >= since && a.RowVersion < upper)).ToListAsync(ct);
         var operators = await db.Operators.AsNoTracking()
             .Where(o => o.CompanyId == scope.CompanyId && (o.SiteId == null || o.SiteId == scope.SiteId))
             .Where(o => full || (o.RowVersion >= since && o.RowVersion < upper)).ToListAsync(ct);
@@ -85,7 +85,8 @@ public sealed class RegisterReferenceService(IPosDbContext db, IRowVersionSource
         return new ReferenceSyncResponse(
             Cursor.Format(upper, now), full, now,
             [.. categories.Select(c => new SyncCategoryDto(c.Id, c.Code, c.Name, c.DisplayOrder, c.ColorHex, c.IsActive))],
-            [.. articles.Select(a => new SyncArticleDto(a.Id, a.Code, a.Name, a.ReceiptLabel, a.CategoryId, a.BasePrice, a.VatRate, a.IsSubsidizable, a.IsActive))],
+            [.. articles.Select(a => new SyncArticleDto(a.Id, a.Code, a.Name, a.ReceiptLabel, a.CategoryId, a.BasePrice, a.VatRate, a.IsSubsidizable, a.IsActive,
+                a.VisualDescription, [.. a.Photos.OrderBy(p => p.DisplayOrder).Select(p => p.Id)]))],
             [.. operators.Select(o => new SyncOperatorDto(o.Id, o.SiteId, o.Code, o.FirstName, o.LastName, (int)o.Roles, o.PinHash, o.IsActive))],
             [.. contracts.Where(c => full || Changed(c.RowVersion))
                 .Select(c => new SyncContractDto(c.Id, c.ClientCompanyId, c.StartDate, c.EndDate, c.IsActive, c.AcceptsPointOfSale(scope.PointOfSaleId)))],

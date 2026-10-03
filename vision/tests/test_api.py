@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 
 import cv2
@@ -183,15 +184,15 @@ def test_dataset_can_be_disabled(settings, tmp_path):
     assert response.json()["stored"] is False
 
 
-def test_images_with_a_face_are_not_stored(settings, tmp_path, monkeypatch):
+def test_images_with_a_face_are_neither_sent_to_the_model_nor_stored(settings, tmp_path, monkeypatch):
     monkeypatch.setattr("app.main.contains_face", lambda pixels: True)
-    body = post_recognize(client_for(settings)).json()
-    files = list((tmp_path / "dataset").glob("*/*"))
-    assert [f.suffix for f in files] == [".json"]
-    record = json.loads(files[0].read_text(encoding="utf-8"))
-    assert record["image"] is None
-    assert record["image_skipped_reason"] == "face_detected"
-    assert record["recognition_id"] == body["recognition_id"]
+    stub = StubProvider([RawDetection("BOI-EAU", 0.9, None, [])])
+    settings = settings.model_copy(update={"provider": "stub"})
+    response = post_recognize(client_for(settings, stub=stub))
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "face_detected"
+    assert stub.calls == []
+    assert not (tmp_path / "dataset").exists()
 
 
 def test_face_detector_ignores_a_tray_like_image():
@@ -205,3 +206,27 @@ def test_face_detector_ignores_a_tray_like_image():
 def test_upload_endpoint_requires_configuration(settings):
     response = client_for(settings).post("/dataset/upload")
     assert response.status_code == 409
+
+
+def test_reference_photos_are_sent_as_file_parts_and_resized(settings):
+    stub = StubProvider()
+    settings = settings.model_copy(update={"provider": "stub", "max_reference_photos_per_candidate": 2})
+    client = client_for(settings, stub=stub)
+    photo = make_jpeg(2000, 1000, seed=3)
+    response = client.post(
+        "/recognize",
+        files=[
+            ("image", ("tray.jpg", make_jpeg(), "image/jpeg")),
+            ("reference_plt-cous", ("a.jpg", photo, "image/jpeg")),
+            ("reference_PLT-COUS", ("b.jpg", photo, "image/jpeg")),
+            ("reference_PLT-COUS", ("c.jpg", photo, "image/jpeg")),
+            ("reference_BOI-EAU", ("d.jpg", b"broken", "image/jpeg")),
+        ],
+        data={"candidates": json.dumps(CANDIDATES)},
+    )
+    assert response.status_code == 200
+    received = {c.article_code: c.reference_photos for c in stub.calls[0][1]}
+    assert len(received["PLT-COUS"]) == 2
+    assert received["BOI-EAU"] == []
+    decoded = cv2.imdecode(np.frombuffer(base64.b64decode(received["PLT-COUS"][0]), np.uint8), cv2.IMREAD_COLOR)
+    assert decoded.shape[:2] == (256, 512)

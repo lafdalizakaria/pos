@@ -59,4 +59,9 @@ public sealed class DeviceOptions
 
     /// <summary>Window (second screen), Simulated.</summary>
     public string CustomerDisplay { get; set; } = "Window";
+
+    /// <summary>Tray camera: VisionService (read by the local vision service, default) or Simulated (images of <see cref="CameraFolder"/>).</summary>
+    public string Camera { get; set; } = "VisionService";
+
+    public string CameraFolder { get; set; } = "";
 }

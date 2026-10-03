@@ -22,6 +22,7 @@ from app.config import Settings
 from app.images import PreparedImage
 from app.models import Candidate
 from app.providers.base import ProviderUnavailableError, RawDetection
+from app.secrets import gemini_key
 
 PROMPT = """Tu es le système de reconnaissance d'une caisse de restaurant d'entreprise au Maroc.
 La photo montre un plateau vu du dessus. Identifie chaque article présent (plat, entrée, dessert, boisson, pain...),
@@ -91,8 +92,8 @@ class GeminiProvider:
         self._clients: dict[str, Any] = {}
 
     def readiness(self, settings: Settings) -> tuple[bool, str | None]:
-        if settings.gemini_api_key is None or not settings.gemini_api_key.get_secret_value():
-            return False, "GEMINI_API_KEY manquante"
+        if gemini_key(settings) is None:
+            return False, "Clé Gemini absente ou illisible (GEMINI_API_KEY ou VISION_GEMINI_API_KEY_FILE)"
         return True, None
 
     def build_request(
@@ -127,7 +128,7 @@ class GeminiProvider:
         return parse_response(response.text, image.width, image.height)
 
     def _client(self, settings: Settings) -> Any:
-        key = settings.gemini_api_key.get_secret_value() if settings.gemini_api_key else ""
+        key = gemini_key(settings) or ""
         if key not in self._clients:
             self._clients = {key: self._client_factory(settings)}
         return self._clients[key]
@@ -158,4 +159,4 @@ def parse_response(text: str | None, width: int, height: int) -> list[RawDetecti
 
 
 def _default_client(settings: Settings) -> Any:
-    return genai.Client(api_key=settings.gemini_api_key.get_secret_value() if settings.gemini_api_key else None)
+    return genai.Client(api_key=gemini_key(settings))

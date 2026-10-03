@@ -127,6 +127,40 @@ RFC 9457 (`application/problem+json`) avec extension `code` stable : 404 `not_fo
 ### Clôture Z
 Calculée en caisse, envoyée après tous les tickets de la session ; le serveur la recalcule et refuse un écart.
 
+## Phase 4 — Reconnaissance des plateaux
+
+```
+ Caméra USB ──► Service vision (Python, 127.0.0.1:8765, service Windows)      ← vision/
+                 GET  /camera/capture  (OpenCV, exposition fixe, recadrage plateau)
+                 POST /recognize       image + candidats (+ photos de référence) → provider → codes du menu uniquement
+                 POST /feedback        lignes validées → labels YOLO du dataset local
+                 providers : mock │ gemini │ yolo, hybrid (phase 5) — choisis par vision.json, relu à chaud
+                        ▲
+ Caisse (Client.Core) ──┘ TrayRecognitionService : budget 6 s, seuils 0,60/0,90, jamais bloquant
+                        └─ outbox « Recognition » ──► POST /api/v1/register/recognitions ──► RecognitionLog
+                                                                      Back-office « Performance vision »
+```
+
+### Flux d'une vente assistée
+1. **Photo plateau** (bouton ou F2) : la caisse demande l'image au service (`VisionServiceCamera`), puis
+   `POST /recognize` avec les articles du menu affiché (code, libellé, catégorie, description visuelle) et les photos de
+   référence en cache. Tout est borné à 6 s ; toute erreur (caméra, service, modèle, délai, visage) affiche un message
+   et laisse la saisie manuelle.
+2. Le service garde-fou : image décodée et réduite (1024 px), refus si visage, appel du provider sous délai, codes
+   hors candidats écartés, boîtes ramenées en pixels de l'image d'origine + format YOLO, enregistrement dans le dataset.
+3. La caisse classe chaque proposition (`RecognitionConfidencePolicy`) : ajout automatique, ligne en surbrillance avec
+   second choix, ou simple indication de catégorie.
+4. Après encaissement : les lignes validées, rattachées à leur prédiction, partent au service (`/feedback`, labels du
+   dataset) et au serveur via l'outbox (statistiques). Les lignes du ticket portent leur origine (`LineSource`).
+
+### Choix
+- La caméra est lue par le service Python (OpenCV y est déjà) : la caisse .NET n'embarque aucune bibliothèque
+  d'imagerie native.
+- Les photos de référence passent en parties fichier `reference_<CODE>` (champs de formulaire limités à 1 Mo par
+  Starlette), réduites à 512 px par le service.
+- Les statistiques ne bloquent jamais la file fiscale : un refus serveur d'un élément `Recognition` est journalisé et
+  sauté.
+
 ## Tests
 
 | Projet | Contenu |
@@ -135,5 +169,7 @@ Calculée en caisse, envoyée après tous les tickets de la session ; le serveur
 | `tests/Newrest.Pos.Api.Tests` | API complète (WebApplicationFactory + SQL Server) : authentification (jetons invalides/expirés, clé de caisse, rotation, révocation, limitation de débit), périmètres et rôles, organisation, catalogue, photos, tarifs, menus (copie jour/semaine), clients, contrats, subventions, convives, badges perdus, import CSV/Excel, comptes (recharge idempotente, corrections, contre-passations, remboursements), audit |
 | `tests/Newrest.Pos.Devices.Tests` | ESC/POS (octets, accents, coupe, tiroir, TCP/fichier), détection du lecteur de badge clavier, simulateurs |
 | `tests/Newrest.Pos.Scenarios.Tests` | Caisse complète sans interface (Client.Core + SQLite + simulateurs) contre l'API réelle sur SQL Server : vente badge avec subvention → impression → synchronisation → back-office ; **20 ventes hors ligne** avec plafond atteint, retour réseau avec réponses perdues, sans doublon ; avoir + recharge + Z ; badge perdu ; caisse réinstallée ; file bloquée puis relancée ; écran de vente en 3 gestes |
+| `tests/Newrest.Pos.Scenarios.Tests` (vision) | Vente assistée (seuils, second choix, catégorie, retour d'apprentissage, statistiques serveur, < 10 s), service lent (repli manuel), service arrêté/en erreur, nouvelle photo, photos de référence (téléchargement, envoi, synchronisation incrémentale), client HTTP vision ; **caisse + vrai service Python** (mock) jusqu'au dataset |
+| `vision/tests` (pytest) | Contrat de réponse, rejet des codes hors menu, délai dépassé (504), erreurs provider, images invalides, garde-fou visages, dataset/feedback/labels YOLO, envoi central, schéma et requête Gemini (faux client), clé DPAPI, caméra (recadrage), bascule de provider à chaud, écoute locale uniquement |
 | `tests/e2e/backoffice-smoke.mjs` | Parcours navigateur (Playwright) du back-office, hors CI |
 | `tests/Newrest.Pos.Infrastructure.IntegrationTests` | SQL Server (Testcontainers) : migrations + seed, 50 débits concurrents, idempotence (séquentielle et concurrente), conflit de clé, contre-passation unique, rejeu hors ligne, aller-retour ticket + hash, altération SQL détectée, immutabilité, unicité séquence/session, Z persisté |

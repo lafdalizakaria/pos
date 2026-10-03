@@ -82,9 +82,25 @@
       <Border Style="{StaticResource CardBorder}">
         <DockPanel>
           <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+            <Button DockPanel.Dock="Right" Style="{StaticResource BigButton}" Width="200" Height="64" Content="📷 Photo plateau (F2)"
+                    Command="{Binding CaptureTrayCommand}" Visibility="{Binding VisionEnabled, Converter={StaticResource BoolToVisibility}}" />
             <TextBox DockPanel.Dock="Right" Width="280" Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}" ToolTip="Rechercher un article" />
             <TextBlock FontSize="22" FontWeight="Bold" VerticalAlignment="Center" Text="{Binding MenuLabel}" />
           </DockPanel>
+          <!-- Low-confidence predictions: category only, the cashier picks the article below -->
+          <ItemsControl DockPanel.Dock="Top" ItemsSource="{Binding Hints}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate DataType="{x:Type data:VisionHint}">
+                <Border Background="{StaticResource ReviewBackground}" CornerRadius="6" Padding="10,6" Margin="0,0,0,6">
+                  <DockPanel>
+                    <Button DockPanel.Dock="Right" Style="{StaticResource SecondaryButton}" Content="Ignorer"
+                            Command="{Binding DataContext.DismissHintCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}" CommandParameter="{Binding}" />
+                    <TextBlock VerticalAlignment="Center" FontSize="17" Text="{Binding Text}" TextWrapping="Wrap" />
+                  </DockPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
           <ScrollViewer VerticalScrollBarVisibility="Auto">
             <ItemsControl ItemsSource="{Binding Groups}">
               <ItemsControl.ItemTemplate>
@@ -156,18 +172,40 @@
           <ListBox ItemsSource="{Binding Cart.Lines}" BorderThickness="0" HorizontalContentAlignment="Stretch">
             <ListBox.ItemTemplate>
               <DataTemplate DataType="{x:Type sales:CartLine}">
-                <DockPanel Margin="0,4">
-                  <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                    <Button Style="{StaticResource SecondaryButton}" MinWidth="56" Content="−"
-                            Command="{Binding DataContext.DecrementCommand, RelativeSource={RelativeSource AncestorType=ListBox}}" CommandParameter="{Binding}" />
-                    <Button Style="{StaticResource SecondaryButton}" MinWidth="56" Content="+"
-                            Command="{Binding DataContext.IncrementCommand, RelativeSource={RelativeSource AncestorType=ListBox}}" CommandParameter="{Binding}" />
+                <Border Padding="4" CornerRadius="6">
+                  <Border.Style>
+                    <Style TargetType="Border">
+                      <Style.Triggers>
+                        <DataTrigger Binding="{Binding NeedsReview}" Value="True">
+                          <Setter Property="Background" Value="{StaticResource ReviewBackground}" />
+                        </DataTrigger>
+                      </Style.Triggers>
+                    </Style>
+                  </Border.Style>
+                  <StackPanel>
+                    <DockPanel Margin="0,4">
+                      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                        <Button Style="{StaticResource SecondaryButton}" MinWidth="56" Content="−"
+                                Command="{Binding DataContext.DecrementCommand, RelativeSource={RelativeSource AncestorType=ListBox}}" CommandParameter="{Binding}" />
+                        <Button Style="{StaticResource SecondaryButton}" MinWidth="56" Content="+"
+                                Command="{Binding DataContext.IncrementCommand, RelativeSource={RelativeSource AncestorType=ListBox}}" CommandParameter="{Binding}" />
+                      </StackPanel>
+                      <TextBlock DockPanel.Dock="Right" Margin="8,0" VerticalAlignment="Center" Text="{Binding Amount, Converter={StaticResource Mad}}" />
+                      <TextBlock VerticalAlignment="Center" TextWrapping="Wrap">
+                        <Run Text="{Binding Quantity, Mode=OneWay}" /><Run Text=" × " /><Run Text="{Binding Label, Mode=OneWay}" />
+                      </TextBlock>
+                    </DockPanel>
+                    <!-- Medium confidence: confirm or switch to the second choice in one tap -->
+                    <DockPanel Visibility="{Binding NeedsReview, Converter={StaticResource BoolToVisibility}}">
+                      <Button DockPanel.Dock="Right" Style="{StaticResource SecondaryButton}" Content="OK"
+                              Command="{Binding DataContext.ConfirmLineCommand, RelativeSource={RelativeSource AncestorType=ListBox}}" CommandParameter="{Binding}" />
+                      <Button DockPanel.Dock="Right" Style="{StaticResource SecondaryButton}" Content="→ 2e choix"
+                              Visibility="{Binding HasAlternative, Converter={StaticResource BoolToVisibility}}"
+                              Command="{Binding DataContext.SwitchToAlternativeCommand, RelativeSource={RelativeSource AncestorType=ListBox}}" CommandParameter="{Binding}" />
+                      <TextBlock VerticalAlignment="Center" FontStyle="Italic" Text="{Binding ReviewText}" TextWrapping="Wrap" />
+                    </DockPanel>
                   </StackPanel>
-                  <TextBlock DockPanel.Dock="Right" Margin="8,0" VerticalAlignment="Center" Text="{Binding Amount, Converter={StaticResource Mad}}" />
-                  <TextBlock VerticalAlignment="Center" TextWrapping="Wrap">
-                    <Run Text="{Binding Quantity, Mode=OneWay}" /><Run Text=" × " /><Run Text="{Binding Label, Mode=OneWay}" />
-                  </TextBlock>
-                </DockPanel>
+                </Border>
               </DataTemplate>
             </ListBox.ItemTemplate>
           </ListBox>

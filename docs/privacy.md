@@ -23,15 +23,22 @@
 
 Aucune donnée sensible (santé, religion, etc.). Les choix de plats ne sont pas utilisés à des fins de profilage.
 
-## Images de plateaux (vision)
+## Images de plateaux (vision) — phase 4
 
-- Recadrage strict sur la zone plateau **à la capture** (zone configurable par caisse) : aucune image de visage ne doit
-  être enregistrée ; un contrôle visuel est prévu lors de l'installation de chaque caméra.
-- Les images ne sont pas associées au nom du convive dans le dataset d'entraînement (seulement au ticket et aux codes
-  articles).
-- Si le provider Gemini est utilisé, les images sont transmises à Google : à mentionner dans la déclaration CNDP
-  (transfert hors du Maroc), avec configuration sans rétention lorsque l'offre le permet. Le provider YOLO local évite
-  tout transfert.
+- **Recadrage strict à la capture** : la caméra est lue par le service vision du poste, qui ne garde que la zone du
+  plateau (`VISION_CAMERA_CROP`, réglée et contrôlée visuellement à l'installation de chaque caméra).
+- **Détecteur de visages avant tout traitement** : une image où un visage est détecté n'est ni envoyée au modèle ni
+  enregistrée ; la caissière saisit le plateau à la main et un message demande de faire recadrer la caméra.
+- Les images du dataset (sur le poste, rotation à 20 000) ne sont associées qu'à l'identifiant de reconnaissance, à la
+  caisse, au ticket et aux codes articles — **jamais** au convive (le badge n'est pas enregistré dans le dataset).
+  Elles ne remontent pas au serveur central ; l'envoi vers un stockage d'entraînement est optionnel (URL signée en
+  écriture seule) et à déclarer.
+- **Provider Gemini** : l'image recadrée du plateau et la liste des articles du jour sont transmises à Google
+  (Gemini API) à chaque reconnaissance → transfert hors du Maroc à mentionner dans la déclaration CNDP et à encadrer
+  contractuellement (conditions de traitement des données de l'offre payante, sans utilisation pour l'entraînement
+  de Google ; vérifier la durée de rétention applicable). Le provider YOLO local (phase 5) supprime tout transfert.
+- Clé Gemini chiffrée par DPAPI sur le poste (jamais en clair dans un fichier ou la configuration).
+- Statistiques remontées au serveur : codes articles proposés/validés, confiances, latences — aucune image.
 
 ## Droits et sécurité
 

@@ -1,0 +1,97 @@
+@page "/vision"
+@inherits PageBase
+@inject TimeProvider Clock
+
+<PageTitle>Performance vision - Newrest POS</PageTitle>
+<h1>Performance de la reconnaissance des plateaux</h1>
+<Notice Error="@Error" Success="@Success" />
+
+<div class="toolbar">
+    <label>Du <input type="date" @bind="_from" /></label>
+    <label>Au <input type="date" @bind="_to" /></label>
+    <label>Site
+        <select @bind="_siteId">
+            <option value="">Tous les sites</option>
+            @foreach (var s in _sites) { <option value="@s.Id">@s.Name</option> }
+        </select>
+    </label>
+    <button disabled="@Busy" @onclick="RefreshAsync">Afficher</button>
+</div>
+
+@if (_stats is { } st)
+{
+    <section class="card">
+        <h2>Indicateurs</h2>
+        <p class="hint">Auto = ajouté sans intervention (confiance ≥ seuil haut) ; Confirmé = proposé en surbrillance et gardé ;
+            Corrigé = la caissière a choisi un autre article ; Manuel = article non proposé, ajouté depuis le menu.
+            Taux de correction = corrigés / quantités proposées par la vision. Indisponible = délai dépassé ou service en erreur (saisie manuelle).</p>
+        <table>
+            <thead><tr><th></th><th class="num">Plateaux</th><th class="num">Indisponible</th><th class="num">Latence moy.</th><th class="num">Latence p95</th>
+                <th class="num">Articles</th><th class="num">Auto</th><th class="num">Confirmé</th><th class="num">Corrigé</th><th class="num">Manuel</th>
+                <th class="num">Taux auto</th><th class="num">Taux de correction</th></tr></thead>
+            <tbody>
+                @foreach (var (k, group) in Rows(st))
+                {
+                    <tr class="@(group == "total" ? "strong" : null)">
+                        <td>@(group != "provider" ? k.Label : k.Label == "none" ? "Sans réponse (saisie manuelle)" : $"Provider {k.Label}")</td>
+                        <td class="num">@k.Recognitions</td><td class="num @(k.TimedOut > 0 ? "negative" : null)">@k.TimedOut</td>
+                        <td class="num">@k.AverageLatencyMs ms</td><td class="num">@k.P95LatencyMs ms</td>
+                        <td class="num">@k.Lines</td><td class="num">@k.Auto</td><td class="num">@k.Confirmed</td><td class="num">@k.Corrected</td><td class="num">@k.Manual</td>
+                        <td class="num">@Messages.Percent(k.AutoAcceptRate)</td><td class="num">@Messages.Percent(k.CorrectionRate)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
+
+    <section class="card">
+        <h2>Par article</h2>
+        <p class="hint">Les articles les plus corrigés ou saisis à la main en premier : candidats pour de nouvelles photos de référence ou une
+            meilleure description visuelle.</p>
+        <table>
+            <thead><tr><th>Article</th><th class="num">Vendus (plateaux reconnus)</th><th class="num">Auto</th><th class="num">Confirmé</th>
+                <th class="num">Corrigé</th><th class="num">Manuel</th></tr></thead>
+            <tbody>
+                @foreach (var a in st.ByArticle)
+                {
+                    <tr><td><code>@a.ArticleCode</code> @a.ArticleName</td><td class="num">@a.Sold</td><td class="num">@a.Auto</td><td class="num">@a.Confirmed</td>
+                        <td class="num @(a.Corrected > 0 ? "negative" : null)">@a.Corrected</td><td class="num">@a.Manual</td></tr>
+                }
+            </tbody>
+        </table>
+    </section>
+
+    <section class="card">
+        <h2>Confusions fréquentes</h2>
+        @if (st.Confusions.Count == 0) { <p class="muted">Aucune correction sur la période.</p> }
+        else
+        {
+            <table>
+                <thead><tr><th>Proposé par le modèle</th><th>Vendu</th><th class="num">Nombre</th></tr></thead>
+                <tbody>@foreach (var c in st.Confusions) { <tr><td><code>@c.Predicted</code></td><td><code>@c.Actual</code></td><td class="num">@c.Count</td></tr> }</tbody>
+            </table>
+        }
+    </section>
+}
+
+@code {
+    private IReadOnlyList<SiteDto> _sites = [];
+    private VisionStatsDto? _stats;
+    private DateOnly _from;
+    private DateOnly _to;
+    private Guid? _siteId;
+
+    protected override async Task LoadAsync()
+    {
+        _to = DateOnly.FromDateTime(Clock.GetUtcNow().UtcDateTime);
+        _from = _to.AddDays(-6);
+        _sites = await Run<OrganizationService, IReadOnlyList<SiteDto>>(s => s.ListSitesAsync()) ?? [];
+        await RefreshAsync();
+    }
+
+    private async Task RefreshAsync() =>
+        _stats = await Run<RecognitionService, VisionStatsDto>(s => s.GetStatsAsync(_from, _to, _siteId));
+
+    private static IEnumerable<(VisionKpiDto Kpi, string Group)> Rows(VisionStatsDto stats) =>
+        [(stats.Total, "total"), .. stats.BySite.Select(s => (s, "site")), .. stats.ByProvider.Select(p => (p, "provider"))];
+}

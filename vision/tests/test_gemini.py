@@ -108,3 +108,29 @@ def test_parse_response_rejects_invalid_json_and_skips_bad_items():
     )
     assert len(detections) == 1
     assert detections[0].bbox is None
+
+
+def test_key_from_a_dpapi_file(settings, tmp_path, monkeypatch):
+    from app import secrets
+
+    blob = tmp_path / "gemini.key"
+    blob.write_bytes(b"encrypted")
+    monkeypatch.setattr(secrets, "unprotect", lambda data: b"key-from-dpapi\n" if data == b"encrypted" else b"")
+    secrets._read_protected.cache_clear()
+    current = settings.model_copy(update={"gemini_api_key": None, "gemini_api_key_file": str(blob)})
+    assert secrets.gemini_key(current) == "key-from-dpapi"
+    assert GeminiProvider(lambda s: None).readiness(current) == (True, None)
+
+    missing = settings.model_copy(update={"gemini_api_key": None, "gemini_api_key_file": str(tmp_path / "absent.key")})
+    ready, detail = GeminiProvider(lambda s: None).readiness(missing)
+    assert not ready and "VISION_GEMINI_API_KEY_FILE" in detail
+
+
+def test_dpapi_is_windows_only():
+    import sys
+
+    from app.secrets import SecretUnavailableError, unprotect
+
+    if sys.platform != "win32":
+        with pytest.raises(SecretUnavailableError):
+            unprotect(b"x")

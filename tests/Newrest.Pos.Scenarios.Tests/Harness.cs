@@ -19,6 +19,7 @@ using Newrest.Pos.Client.Core.Sync;
 using Newrest.Pos.Client.Core.ViewModels;
 using Newrest.Pos.Contracts.V1;
 using Newrest.Pos.Devices.Badges;
+using Newrest.Pos.Devices.Camera;
 using Newrest.Pos.Devices.Display;
 using Newrest.Pos.Devices.Printing;
 using Newrest.Pos.Testing;
@@ -120,7 +121,8 @@ public sealed class RegisterHarness : IAsyncDisposable
     public T Get<T>()
         where T : notnull => _services.GetRequiredService<T>();
 
-    public static async Task<RegisterHarness> CreateAsync(ApiFactory api, Guid registerId, RegisterOptions? options = null, string? folder = null)
+    public static async Task<RegisterHarness> CreateAsync(ApiFactory api, Guid registerId, RegisterOptions? options = null, string? folder = null,
+        Action<IServiceCollection>? configure = null)
     {
         folder ??= Path.Combine(Path.GetTempPath(), "pos-register-" + Guid.NewGuid().ToString("N"));
         options ??= new RegisterOptions();
@@ -129,7 +131,7 @@ public sealed class RegisterHarness : IAsyncDisposable
         options.RequestTimeout = TimeSpan.FromSeconds(30);
         var network = new NetworkSwitch();
         var printer = new SimulatedReceiptPrinter(Path.Combine(folder, "receipts"));
-        var services = new ServiceCollection()
+        var collection = new ServiceCollection()
             .AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance)
             .AddSingleton(typeof(ILogger<>), typeof(NullLogger<>))
             .AddRegisterCore(options)
@@ -141,7 +143,9 @@ public sealed class RegisterHarness : IAsyncDisposable
             .AddSingleton<SimulatedBadgeReader>()
             .AddSingleton<IBadgeReader>(sp => sp.GetRequiredService<SimulatedBadgeReader>())
             .AddSingleton<IUiDispatcher, InlineDispatcher>()
-            .BuildServiceProvider();
+            .AddSingleton<ICamera>(new SimulatedCamera());
+        configure?.Invoke(collection);
+        var services = collection.BuildServiceProvider();
         var harness = new RegisterHarness(services, network, printer, folder);
 
         var key = await (await api.Admin().PostAsync($"/api/v1/registers/{registerId}/device-key", null)).Content.ReadFromJsonAsync<DeviceKeyIssued>();

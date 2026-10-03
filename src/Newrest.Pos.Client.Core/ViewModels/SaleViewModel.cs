@@ -5,31 +5,55 @@ using Newrest.Pos.Client.Core.Data;
 using Newrest.Pos.Client.Core.Sales;
 using Newrest.Pos.Client.Core.Sessions;
 using Newrest.Pos.Client.Core.Sync;
+using Newrest.Pos.Client.Core.Vision;
 using Newrest.Pos.Client.Data;
 using Newrest.Pos.Contracts.V1;
 using Newrest.Pos.Devices.Display;
 using Newrest.Pos.Domain.Accounts;
 using Newrest.Pos.Domain.Sales;
+using Newrest.Pos.Domain.Vision;
 
 namespace Newrest.Pos.Client.Core.Data
 {
     public sealed record MenuButton(DailyMenuItemDto Item, string Label, string Price, decimal VatRate, bool IsSubsidizable, string? Color);
 
     public sealed record MenuCategoryGroup(string Name, string? Color, IReadOnlyList<MenuButton> Items);
+
+    /// <summary>Low-confidence prediction: only the category is suggested, the cashier picks the article from the menu.</summary>
+    public sealed record VisionHint(int Index, string CategoryName, MenuButton Predicted, decimal Confidence)
+    {
+        public string Text => $"{CategoryName} : choisir dans le menu (peut-être {Predicted.Label}, {Confidence * 100:0} %)";
+    }
 }
 
 namespace Newrest.Pos.Client.Core.ViewModels
 {
     /// <summary>
     /// Sale screen: menu of the day by category (+ search), cart, badge, totals, then payment. A standard tray takes
-    /// three gestures: items (or recognition, phase 4), badge, "Compte".
+    /// three gestures: tray photo (or items), badge, "Compte". Recognition: confidence ≥ high threshold → line added;
+    /// between thresholds → line added highlighted with the second choice one tap away; below → category suggested only.
     /// </summary>
     public sealed partial class SaleViewModel(
-        SaleService sales, ReferenceCache cache, CashSessionService sessions, OperatorLoginService login, ICustomerDisplay display, TimeProvider clock)
+        SaleService sales, ReferenceCache cache, CashSessionService sessions, OperatorLoginService login, ICustomerDisplay display, TimeProvider clock,
+        TrayRecognitionService vision)
         : PageViewModel, IBadgeAware
     {
         private IReadOnlyList<MenuCategoryGroup> _allGroups = [];
+        private Dictionary<Guid, string> _categoryOfArticle = [];
         private LocalCashSession? _session;
+        private TrayRecognition? _recognition;
+
+        [ObservableProperty]
+        [NotifyCanExecuteChangedFor(nameof(CaptureTrayCommand))]
+        private bool _isRecognizing;
+
+        /// <summary>Low-confidence predictions waiting for the cashier's choice.</summary>
+        public ObservableCollection<VisionHint> Hints { get; } = [];
+
+        public bool VisionEnabled => vision.IsEnabled;
+
+        /// <summary>Recording of the last recognition outcome (outbox + feedback), exposed for tests.</summary>
+        public Task LastOutcome { get; private set; } = Task.CompletedTask;
 
         [ObservableProperty]
         private Cart _cart = new();
@@ -95,7 +119,10 @@ namespace Newrest.Pos.Client.Core.ViewModels
                         [.. g.OrderBy(i => i.DisplayOrder).Select(i => new MenuButton(i, i.ArticleName, Format.Amount(i.EffectivePrice),
                             articles.GetValueOrDefault(i.ArticleId)?.VatRate ?? 0.10m, articles.GetValueOrDefault(i.ArticleId)?.IsSubsidizable ?? true,
                             categories.GetValueOrDefault(g.Key)?.ColorHex))]))];
+                _categoryOfArticle = _allGroups.SelectMany(g => g.Items.Select(i => (i.Item.ArticleId, g.Name)))
+                    .GroupBy(x => x.ArticleId).ToDictionary(x => x.Key, x => x.First().Name);
                 ApplySearch();
+                _ = Safe(vision.PrefetchPhotosAsync([.. _allGroups.SelectMany(g => g.Items)]));
             });
             NewCart();
         }
@@ -120,8 +147,135 @@ namespace Newrest.Pos.Client.Core.ViewModels
         [RelayCommand]
         private void AddItem(MenuButton button)
         {
-            Cart.Add(button.Item, button.VatRate, button.IsSubsidizable);
+            // A low-confidence prediction of the same category is answered by this choice (its box becomes a training label).
+            var hint = Hints.FirstOrDefault(h => h.CategoryName == _categoryOfArticle.GetValueOrDefault(button.Item.ArticleId));
+            if (hint is null)
+            {
+                Cart.Add(button.Item, button.VatRate, button.IsSubsidizable);
+            }
+            else
+            {
+                var source = hint.Predicted.Item.ArticleId == button.Item.ArticleId ? LineSource.VisionConfirmed : LineSource.VisionCorrected;
+                Cart.Add(button.Item, button.VatRate, button.IsSubsidizable, source).Predictions.Add((hint.Index, source));
+                Hints.Remove(hint);
+            }
+
             Recompute();
+        }
+
+        /// <summary>Photo of the tray → recognition (6 s maximum). Any failure leaves the cashier with the manual entry.</summary>
+        [RelayCommand(CanExecute = nameof(CanCapture))]
+        private async Task CaptureTrayAsync()
+        {
+            IsRecognizing = true;
+            Error = null;
+            Message = "Reconnaissance du plateau…";
+            try
+            {
+                ClearVisionLines();
+                var recognition = await vision.RecognizeAsync(_allGroups);
+                RecordOutcome(null);
+                _recognition = recognition;
+                if (recognition.Failed)
+                {
+                    Message = null;
+                    Error = recognition.Failure;
+                    return;
+                }
+
+                foreach (var p in recognition.Proposals)
+                {
+                    switch (p.Decision)
+                    {
+                        case RecognitionDecision.AutoAccept:
+                            Cart.Add(p.Button.Item, p.Button.VatRate, p.Button.IsSubsidizable, LineSource.VisionAuto).Predictions
+                                .Add((p.Index, LineSource.VisionAuto));
+                            break;
+                        case RecognitionDecision.NeedsConfirmation:
+                            var line = Cart.Add(p.Button.Item, p.Button.VatRate, p.Button.IsSubsidizable, LineSource.VisionConfirmed, separate: true);
+                            line.Alternative = p.Alternative;
+                            line.Confidence = p.Confidence;
+                            line.NeedsReview = true;
+                            line.Predictions.Add((p.Index, LineSource.VisionConfirmed));
+                            break;
+                        default:
+                            Hints.Add(new VisionHint(p.Index, p.CategoryName, p.Button, p.Confidence));
+                            break;
+                    }
+                }
+
+                var review = Cart.Lines.Count(l => l.NeedsReview);
+                Message = recognition.Proposals.Count == 0
+                    ? "Aucun article reconnu : saisir le plateau."
+                    : $"Plateau reconnu en {Format.Seconds(recognition.ElapsedMs)}"
+                      + (review > 0 ? $" — {review} ligne(s) à vérifier" : "")
+                      + (Hints.Count > 0 ? $" — {Hints.Count} article(s) à choisir" : "");
+            }
+            finally
+            {
+                IsRecognizing = false;
+                Recompute();
+            }
+        }
+
+        private bool CanCapture() => vision.IsEnabled && !IsRecognizing;
+
+        /// <summary>The highlighted line is right.</summary>
+        [RelayCommand]
+        private static void ConfirmLine(CartLine line) => line.NeedsReview = false;
+
+        /// <summary>One tap: the highlighted line becomes the second choice proposed by the model.</summary>
+        [RelayCommand]
+        private void SwitchToAlternative(CartLine line)
+        {
+            if (line.Alternative is not { } alternative)
+            {
+                return;
+            }
+
+            var predictions = line.Predictions.Select(p => (p.Index, LineSource.VisionCorrected)).ToList();
+            var quantity = line.Quantity;
+            Cart.Lines.Remove(line);
+            var replacement = Cart.Add(alternative.Item, alternative.VatRate, alternative.IsSubsidizable, LineSource.VisionCorrected);
+            replacement.Quantity += quantity - 1;
+            replacement.Predictions.AddRange(predictions);
+            Recompute();
+        }
+
+        [RelayCommand]
+        private void DismissHint(VisionHint hint) => Hints.Remove(hint);
+
+        private void ClearVisionLines()
+        {
+            foreach (var line in Cart.Lines.Where(l => l.Predictions.Count > 0).ToList())
+            {
+                Cart.Lines.Remove(line);
+            }
+
+            Hints.Clear();
+        }
+
+        /// <summary>Sends the outcome of the current recognition (sold with <paramref name="ticketId"/>, or abandoned).</summary>
+        private void RecordOutcome(Guid? ticketId)
+        {
+            if (_recognition is { } recognition)
+            {
+                _recognition = null;
+                LastOutcome = Safe(vision.RecordOutcomeAsync(recognition, ticketId, [.. Cart.Lines]));
+            }
+        }
+
+        private static async Task Safe(Task task)
+        {
+            try
+            {
+                await task;
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                // Statistics and photo cache only: never disturb the sale.
+                System.Diagnostics.Trace.TraceWarning("Vision side task failed: " + ex.Message);
+            }
         }
 
         [RelayCommand]
@@ -146,6 +300,8 @@ namespace Newrest.Pos.Client.Core.ViewModels
         [RelayCommand]
         private void NewCart()
         {
+            RecordOutcome(null);
+            Hints.Clear();
             Cart = new Cart();
             Payments.Clear();
             Tendered = null;
@@ -250,6 +406,7 @@ namespace Newrest.Pos.Client.Core.ViewModels
             }
 
             LastSale = result;
+            RecordOutcome(result!.Ticket.Id);
             var change = result!.Ticket.Payments.Sum(p => p.Change ?? 0m);
             Message = $"Ticket {result.Ticket.Number} — {Format.Mad(result.Ticket.DinerShare)}" + (change > 0 ? $" — rendu {Format.Mad(change)}" : "")
                       + (result.AccountDebitedOffline ? " (compte débité hors ligne)" : "");

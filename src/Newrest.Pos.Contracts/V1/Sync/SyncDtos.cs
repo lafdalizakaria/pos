@@ -11,8 +11,10 @@ public sealed record RegisterProfileDto(
 
 public sealed record SyncCategoryDto(Guid Id, string Code, string Name, int DisplayOrder, string? ColorHex, bool IsActive);
 
+/// <param name="VisualDescription">Helps the vision service tell similar dishes apart.</param>
+/// <param name="PhotoIds">Reference photos (download: <c>GET register/photos/{id}</c>), in display order.</param>
 public sealed record SyncArticleDto(Guid Id, string Code, string Name, string? ReceiptLabel, Guid CategoryId, decimal BasePrice,
-    decimal VatRate, bool IsSubsidizable, bool IsActive);
+    decimal VatRate, bool IsSubsidizable, bool IsActive, string? VisualDescription = null, IReadOnlyList<Guid>? PhotoIds = null);
 
 /// <summary>Operators of the register's company (PIN hash included for offline login).</summary>
 public sealed record SyncOperatorDto(Guid Id, Guid? SiteId, string Code, string FirstName, string LastName, int Roles, string PinHash, bool IsActive);
@@ -72,3 +74,18 @@ public sealed record ZReportSyncDto(Guid Id, Guid CashSessionId, int ZNumber, Da
     Guid ClosedByOperatorId, bool Forced, long? LastTicketSequence, decimal NetSales, decimal TotalVat, decimal ExpectedCash);
 
 public sealed record SyncAck(Guid Id, bool WasDuplicate, string? Detail = null);
+
+/// <summary>What the vision service proposed for one prediction (code and confidence 0-1).</summary>
+public sealed record RecognitionPredictionDto(string ArticleCode, decimal Confidence, string? AlternativeCode, decimal? AlternativeConfidence);
+
+/// <summary>Line finally sold. <paramref name="Source"/>: VisionAuto, VisionConfirmed, VisionCorrected or Manual.</summary>
+public sealed record RecognitionLineDto(string ArticleCode, int Quantity, string Source, int? PredictionIndex);
+
+/// <summary>
+/// One tray recognition and what the cashier finally validated (vision KPIs). The image itself stays in the
+/// register's local dataset (<paramref name="DatasetId"/>), uploaded separately when configured.
+/// </summary>
+/// <param name="TimedOut">True when the service did not answer in time or failed: the cashier entered the tray by hand.</param>
+public sealed record RecognitionSyncDto(
+    Guid Id, Guid? TicketId, string? DatasetId, DateTimeOffset CapturedAt, string Provider, int LatencyMs, bool TimedOut,
+    IReadOnlyList<RecognitionPredictionDto> Predictions, IReadOnlyList<RecognitionLineDto> Lines);

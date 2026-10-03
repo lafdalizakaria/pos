@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     max_reference_photos_per_candidate: int = 2
 
     gemini_api_key: SecretStr | None = Field(default=None, validation_alias="GEMINI_API_KEY")
+    #: Registers: DPAPI-protected file (machine scope) written by the installer, used when GEMINI_API_KEY is absent.
+    gemini_api_key_file: str | None = None
     gemini_model: str = "gemini-2.5-flash"
     gemini_temperature: float = 0.1
     #: 0 disables "thinking" on flash models: lower latency, enough for closed-set recognition.
@@ -55,11 +57,33 @@ class Settings(BaseSettings):
     #: Images in which a face is detected are never stored in the dataset.
     face_guard: bool = True
 
+    camera_index: int = 0
+    camera_width: int = 1920
+    camera_height: int = 1080
+    #: Fixed exposure (driver units, e.g. -6) and white balance (K) for stable images; None = automatic.
+    camera_exposure: float | None = -6
+    camera_white_balance: int | None = 4500
+    #: Tray area kept from the frame, "x,y,width,height" in pixels. Set it so that no face can be in the image.
+    camera_crop: str | None = None
+    camera_skip_frames: int = 2
+    #: Reference photos are resized to this size before being sent to the model.
+    reference_photo_max_side: int = 512
+    max_reference_photos_total: int = 40
+
     mock_latency_ms: int = 150
     #: Folder of ``<sha256>.json`` files giving the exact mock answer for a given image (tests, demos).
     mock_scenarios_dir: str | None = None
 
-    @field_validator("gemini_api_key", "dataset_upload_url", "mock_scenarios_dir", mode="before")
+    @field_validator(
+        "gemini_api_key",
+        "dataset_upload_url",
+        "mock_scenarios_dir",
+        "camera_crop",
+        "gemini_api_key_file",
+        "camera_exposure",
+        "camera_white_balance",
+        mode="before",
+    )
     @classmethod
     def _empty_is_none(cls, value: object) -> object:
         """``VAR=`` in a .env file means "not configured"."""

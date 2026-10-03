@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Newrest.Pos.Client.Core.Api;
 using Newrest.Pos.Client.Core.Configuration;
 using Newrest.Pos.Client.Core.Local;
@@ -7,11 +8,15 @@ using Newrest.Pos.Client.Core.Sales;
 using Newrest.Pos.Client.Core.Sessions;
 using Newrest.Pos.Client.Core.Sync;
 using Newrest.Pos.Client.Core.ViewModels;
+using Newrest.Pos.Client.Core.Vision;
+using Newrest.Pos.Devices.Camera;
 
 namespace Newrest.Pos.Client.Core;
 
 public static class DependencyInjection
 {
+    private const string VisionHttp = "vision";
+
     /// <summary>
     /// Register services (singletons: one register = one process). Devices (<c>IReceiptPrinter</c>, <c>ICashDrawer</c>,
     /// <c>ICustomerDisplay</c>, <c>IBadgeReader</c>), <see cref="IDeviceKeyStore"/>, <see cref="IUiDispatcher"/> and the
@@ -33,6 +38,14 @@ public static class DependencyInjection
         services.AddSingleton<CashSessionService>();
         services.AddSingleton<SaleService>();
         services.AddSingleton<AccountOperationsService>();
+        services.AddSingleton(options.Vision);
+        // Own HttpClient: the local vision service is not the central API (no token, loopback only).
+        services.AddKeyedSingleton(VisionHttp, (_, _) => new HttpClient { Timeout = options.Vision.Timeout + TimeSpan.FromSeconds(2) });
+        services.AddSingleton<IVisionClient>(sp => new VisionClient(sp.GetRequiredKeyedService<HttpClient>(VisionHttp), options.Vision));
+        services.TryAddSingleton<ICamera>(sp => new VisionServiceCamera(sp.GetRequiredKeyedService<HttpClient>(VisionHttp), options.Vision,
+            sp.GetRequiredService<TimeProvider>()));
+        services.AddSingleton<ReferencePhotoCache>();
+        services.AddSingleton<TrayRecognitionService>();
 
         services.AddSingleton<ShellViewModel>();
         services.AddSingleton(sp => new Lazy<ShellViewModel>(sp.GetRequiredService<ShellViewModel>));

@@ -118,6 +118,9 @@ public enum OutboxKind
     AccountMovement,
     Ticket,
     ZReport,
+
+    /// <summary>Vision KPIs: never blocks the queue (a refusal is logged and skipped).</summary>
+    Recognition,
 }
 
 public enum OutboxStatus

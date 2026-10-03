@@ -1,7 +1,9 @@
 using System.Security.Claims;
 using Newrest.Pos.Api.Security;
 using Newrest.Pos.Application.Abstractions;
+using Newrest.Pos.Application.Catalog;
 using Newrest.Pos.Application.Sync;
+using Newrest.Pos.Application.Vision;
 using Newrest.Pos.Contracts.V1.Sync;
 
 namespace Newrest.Pos.Api.Endpoints;
@@ -31,6 +33,12 @@ public static class RegisterSyncEndpoints
             .WithSummary("Fiscal ticket, in sequence order. Idempotent; the server checks hash and chain.");
         g.MapPost("/z-reports", (ZReportSyncDto dto, ClaimsPrincipal user, RegisterSyncService s, CancellationToken ct) =>
             s.IngestZReportAsync(RegisterId(user), dto, ct));
+        g.MapPost("/recognitions", (RecognitionSyncDto dto, ClaimsPrincipal user, RecognitionService s, CancellationToken ct) =>
+                s.IngestAsync(RegisterId(user), dto, ct))
+            .WithSummary("Tray recognition outcome (vision KPIs). Idempotent.");
+        g.MapGet("/photos/{photoId:guid}", async (Guid photoId, CatalogService s, CancellationToken ct) =>
+                await s.OpenPhotoForRegisterAsync(photoId, ct) is { } photo ? Results.Stream(photo.Content, photo.ContentType) : Results.NotFound())
+            .WithSummary("Reference photo of an article, sent by the register to its vision service.");
         return api;
     }
 

@@ -32,6 +32,8 @@ public interface IPosDbContext
     DbSet<Account> Accounts { get; }
     DbSet<AccountMovement> AccountMovements { get; }
     DbSet<Ticket> Tickets { get; }
+
+    DbSet<Domain.Vision.RecognitionLog> RecognitionLogs { get; }
     DbSet<CashSession> CashSessions { get; }
     DbSet<ZReport> ZReports { get; }
     DbSet<AuditLog> AuditLogs { get; }

@@ -122,7 +122,8 @@ dotnet test tests/Newrest.Pos.Domain.Tests                     # unitaires (rapi
 dotnet test tests/Newrest.Pos.Infrastructure.IntegrationTests  # nécessite Docker (SQL Server via Testcontainers)
 dotnet test tests/Newrest.Pos.Api.Tests                         # API complète, nécessite Docker
 dotnet test tests/Newrest.Pos.Devices.Tests                     # périphériques
-dotnet test tests/Newrest.Pos.Scenarios.Tests                   # caisse de bout en bout (hors ligne inclus), nécessite Docker
+dotnet test tests/Newrest.Pos.Scenarios.Tests                   # caisse de bout en bout (hors ligne, vision), nécessite Docker
+(cd vision && uv sync && uv run ruff check . && uv run pytest -q) # service vision ; son .venv active aussi le scénario caisse ↔ vrai service
 node tests/e2e/backoffice-smoke.mjs                             # parcours navigateur, voir tests/e2e/README.md
 ```
 
@@ -131,3 +132,37 @@ Image SQL Server des tests surchargeable : `POS_TEST_MSSQL_IMAGE`.
 ## Santé des services
 
 `GET /health/live` (processus) et `GET /health/ready` (base de données) sur l'API et le back-office.
+
+## Reconnaissance des plateaux (phase 4)
+
+### Installer le service vision sur un poste caisse
+1. Copier `vision/` sur le poste, installer uv et NSSM, puis en administrateur :
+   `deploy\vision\install-vision-service.ps1 -Source <dossier vision> -Provider gemini -GeminiApiKey (Read-Host -AsSecureString)`
+   (voir `deploy/vision/README.md`). La clé est chiffrée par DPAPI dans `C:\ProgramData\Newrest\POS\Vision\gemini.key`.
+2. **Régler le recadrage** : ouvrir `http://127.0.0.1:8765/camera/capture` sur le poste, ajuster
+   `camera_crop` dans `C:\ProgramData\Newrest\POS\Vision\vision.json` jusqu'à ne voir **que** le plateau ; vérifier
+   avec une personne devant la caisse qu'aucun visage n'apparaît. Consigner le contrôle.
+3. Caisse : section `Register:Vision` d'`appsettings.json` (activée par défaut, `http://127.0.0.1:8765/`, 6 s,
+   seuils 0,60 / 0,90) ; `Devices:Camera` = `VisionService`.
+4. Photos de référence : back-office → **Articles** → photos (2 par article, vues du dessus, sur plateau) ; les caisses
+   les téléchargent à l'ouverture de l'écran de vente.
+
+### Changer de provider (sans redéployer la caisse)
+Modifier `vision.json` : `{"provider": "mock" | "gemini" | "yolo" | "hybrid"}` — pris en compte à la requête suivante
+(`GET /health` indique le provider actif et s'il est prêt). Un fichier invalide est ignoré (journal du service).
+
+### Incidents
+| Message en caisse | Cause probable | Action |
+|---|---|---|
+| « Service de reconnaissance injoignable » | Service `NewrestPosVision` arrêté | `Restart-Service NewrestPosVision` ; journaux `C:\ProgramData\Newrest\POS\Vision\logs` |
+| « Caméra indisponible » | Caméra débranchée / utilisée par une autre application / mauvais index | Rebrancher ; `VISION_CAMERA_INDEX` |
+| « Reconnaissance trop lente » | Réseau Internet lent (Gemini) ou quota | Vérifier la connexion et les quotas Google ; la vente continue à la main |
+| « Reconnaissance non configurée sur ce poste » | Clé Gemini absente/illisible, ou provider phase 5 | Réinstaller la clé (`-GeminiApiKey`) ; `GET /health` |
+| « Visage détecté dans l'image » | Recadrage trop large | Refaire l'étape 2 ci-dessus |
+
+Dans tous les cas la vente se poursuit en saisie manuelle : la vision ne bloque jamais l'encaissement.
+
+### Suivi
+Back-office → **Performance vision** : plateaux, indisponibilités, latence moyenne et p95, taux d'ajout automatique et
+de correction par site et par provider, articles les plus corrigés, confusions fréquentes (candidats à de nouvelles
+photos de référence ou à une meilleure description visuelle).

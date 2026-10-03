@@ -72,6 +72,32 @@ public sealed class PosApiClient(HttpClient http, RegisterOptions options, IDevi
     public Task<SyncAck> PostZReportAsync(ZReportSyncDto dto, CancellationToken ct = default) =>
         SendAsync<SyncAck>(HttpMethod.Post, "register/z-reports", dto, ct);
 
+    public Task<SyncAck> PostRecognitionAsync(RecognitionSyncDto dto, CancellationToken ct = default) =>
+        SendAsync<SyncAck>(HttpMethod.Post, "register/recognitions", dto, ct);
+
+    /// <summary>Reference photo of an article (null when it no longer exists).</summary>
+    public async Task<byte[]?> GetPhotoAsync(Guid photoId, CancellationToken ct = default)
+    {
+        await RefreshTokenAsync(force: false, ct);
+        var response = await SendRawAsync(HttpMethod.Get, $"register/photos/{photoId}", null, authenticated: true, ct);
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            response.Dispose();
+            await RefreshTokenAsync(force: true, ct);
+            response = await SendRawAsync(HttpMethod.Get, $"register/photos/{photoId}", null, authenticated: true, ct);
+        }
+
+        using (response)
+        {
+            if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                return null;
+            }
+
+            return response.IsSuccessStatusCode ? await response.Content.ReadAsByteArrayAsync(ct) : await ReadAsync<byte[]>(response, ct);
+        }
+    }
+
     private async Task<T> SendAsync<T>(HttpMethod method, string path, object? body, CancellationToken ct)
     {
         await RefreshTokenAsync(force: false, ct);

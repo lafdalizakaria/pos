@@ -13,6 +13,7 @@ using Newrest.Pos.Client.Core.ViewModels;
 using Newrest.Pos.Client.Infrastructure;
 using Newrest.Pos.Client.Views;
 using Newrest.Pos.Devices.Badges;
+using Newrest.Pos.Devices.Camera;
 using Newrest.Pos.Devices.Display;
 using Newrest.Pos.Devices.Printing;
 using Serilog;
@@ -110,6 +111,11 @@ public partial class App : Application
                 services.AddSingleton<KeyboardWedgeBadgeReader>(sp => new KeyboardWedgeBadgeReader(TimeProvider.System));
                 services.AddSingleton<IBadgeReader>(sp => sp.GetRequiredService<KeyboardWedgeBadgeReader>());
                 break;
+        }
+
+        if (devices.Camera == "Simulated")
+        {
+            services.AddSingleton<ICamera>(new SimulatedCamera(devices.CameraFolder));
         }
 
         if (devices.CustomerDisplay == "Window")

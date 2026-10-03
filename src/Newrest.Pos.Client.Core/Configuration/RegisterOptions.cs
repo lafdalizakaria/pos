@@ -28,4 +28,6 @@ public sealed class RegisterOptions
 
     /// <summary>Opening float proposed by default (MAD).</summary>
     public decimal DefaultOpeningFloat { get; set; } = 500m;
+
+    public VisionOptions Vision { get; set; } = new();
 }

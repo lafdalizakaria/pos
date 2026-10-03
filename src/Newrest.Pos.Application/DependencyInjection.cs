@@ -29,6 +29,7 @@ public static class DependencyInjection
         services.AddScoped<RegisterReferenceService>();
         services.AddScoped<RegisterSyncService>();
         services.AddScoped<TicketQueryService>();
+        services.AddScoped<Vision.RecognitionService>();
         return services;
     }
 }

@@ -1,6 +1,8 @@
 """Local recognition service of a register (FastAPI, listens on 127.0.0.1 only).
 
 POST /recognize  multipart: ``image`` (JPEG) + ``candidates`` (JSON list) [+ ``register_id``]
+                 [+ file parts ``reference_<ARTICLE_CODE>``: reference photos, resized here]
+GET  /camera/capture  JPEG of the tray area (fixed exposure, cropped: never a face)
 POST /feedback   JSON: lines validated by the cashier
 GET  /health
 POST /dataset/upload  pushes validated dataset items to the central container (if configured)
@@ -9,6 +11,7 @@ POST /dataset/upload  pushes validated dataset items to the central container (i
 from __future__ import annotations
 
 import asyncio
+import base64
 import ipaddress
 import json
 import logging
@@ -16,9 +19,10 @@ import time
 import uuid
 from typing import Annotated
 
-from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from pydantic import TypeAdapter, ValidationError
 
+from app.camera import Camera, CameraUnavailableError
 from app.config import Settings, SettingsProvider
 from app.dataset import DatasetStore
 from app.images import InvalidImageError, contains_face, prepare
@@ -32,9 +36,12 @@ _candidates_adapter = TypeAdapter(list[Candidate])
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
 
 
-def create_app(settings: SettingsProvider | None = None, registry: ProviderRegistry | None = None) -> FastAPI:
+def create_app(
+    settings: SettingsProvider | None = None, registry: ProviderRegistry | None = None, camera: Camera | None = None
+) -> FastAPI:
     settings = settings or SettingsProvider()
     registry = registry or ProviderRegistry()
+    camera = camera or Camera()
     app = FastAPI(title="Newrest POS — service vision", version="0.4.0")
 
     def dataset(current: Settings) -> DatasetStore:
@@ -54,6 +61,7 @@ def create_app(settings: SettingsProvider | None = None, registry: ProviderRegis
 
     @app.post("/recognize", response_model=RecognizeResponse)
     async def recognize(
+        request: Request,
         image: Annotated[UploadFile, File(description="Photo JPEG du plateau (déjà recadrée par la caisse)")],
         candidates: Annotated[str, Form(description="Liste JSON des articles du menu du jour")],
         register_id: Annotated[str | None, Form()] = None,
@@ -66,6 +74,7 @@ def create_app(settings: SettingsProvider | None = None, registry: ProviderRegis
         if not parsed:
             raise HTTPException(422, detail={"code": "no_candidates", "message": "Aucun article candidat (menu du jour vide)."})
         parsed = _unique(parsed)[: current.max_candidates]
+        parsed = await _attach_reference_photos(request, parsed, current)
 
         data = await image.read(MAX_IMAGE_BYTES + 1)
         if len(data) > MAX_IMAGE_BYTES:
@@ -74,6 +83,12 @@ def create_app(settings: SettingsProvider | None = None, registry: ProviderRegis
             prepared = prepare(data, current.image_max_side, current.jpeg_quality)
         except InvalidImageError as ex:
             raise HTTPException(400, detail={"code": "invalid_image", "message": str(ex)}) from ex
+        if current.face_guard and await asyncio.to_thread(contains_face, prepared.pixels):
+            # Privacy: an image showing a face is neither sent to a model nor stored. The camera crop must be fixed.
+            log.warning("Face detected in the tray image: refused (check VISION_CAMERA_CROP)")
+            raise HTTPException(
+                422, detail={"code": "face_detected", "message": "Visage détecté : recadrer la caméra sur le plateau."}
+            )
 
         provider = registry.get(current)
         started = time.perf_counter()
@@ -106,9 +121,8 @@ def create_app(settings: SettingsProvider | None = None, registry: ProviderRegis
             rejected_codes=rejected,
         )
         if current.dataset_enabled:
-            face = current.face_guard and contains_face(prepared.pixels)
             try:
-                dataset(current).save(response, None if face else data, parsed, register_id, "face_detected" if face else None)
+                dataset(current).save(response, data, parsed, register_id)
             except OSError as ex:
                 log.warning("Dataset write failed: %s", ex)
         return response
@@ -125,6 +139,15 @@ def create_app(settings: SettingsProvider | None = None, registry: ProviderRegis
             background.add_task(dataset(current).upload_pending, current.dataset_upload_url.get_secret_value())
         return FeedbackResponse(recognition_id=request.recognition_id, stored=True, labels=labels, needs_annotation=needs)
 
+    @app.get("/camera/capture", response_class=Response, responses={200: {"content": {"image/jpeg": {}}}})
+    async def capture() -> Response:
+        current = settings.get()
+        try:
+            jpeg, width, height = await asyncio.to_thread(camera.capture_jpeg, current)
+        except (CameraUnavailableError, ValueError) as ex:
+            raise HTTPException(503, detail={"code": "camera_unavailable", "message": str(ex)}) from ex
+        return Response(jpeg, media_type="image/jpeg", headers={"X-Image-Width": str(width), "X-Image-Height": str(height)})
+
     @app.post("/dataset/upload")
     async def upload() -> dict[str, int]:
         current = settings.get()
@@ -134,6 +157,31 @@ def create_app(settings: SettingsProvider | None = None, registry: ProviderRegis
         return {"uploaded": sent}
 
     return app
+
+
+async def _attach_reference_photos(request: Request, candidates: list[Candidate], settings: Settings) -> list[Candidate]:
+    """Reference photos come as file parts ``reference_<code>`` (form fields are limited to 1 MB); resized to 512 px."""
+    form = await request.form()
+    photos: dict[str, list[str]] = {}
+    total = 0
+    for key, value in form.multi_items():
+        if not key.startswith("reference_") or isinstance(value, str) or total >= settings.max_reference_photos_total:
+            continue
+        code = key.removeprefix("reference_").strip().upper()
+        if len(photos.get(code, [])) >= settings.max_reference_photos_per_candidate:
+            continue
+        try:
+            prepared = prepare(await value.read(MAX_IMAGE_BYTES), settings.reference_photo_max_side, 85)
+        except InvalidImageError:
+            continue
+        photos.setdefault(code, []).append(base64.b64encode(prepared.jpeg).decode("ascii"))
+        total += 1
+    return [
+        c.model_copy(update={"reference_photos": [*c.reference_photos, *photos[c.article_code]]})
+        if c.article_code in photos
+        else c
+        for c in candidates
+    ]
 
 
 def _unique(candidates: list[Candidate]) -> list[Candidate]:

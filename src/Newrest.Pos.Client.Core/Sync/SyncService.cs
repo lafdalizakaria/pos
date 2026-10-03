@@ -141,6 +141,14 @@ public sealed partial class SyncService(
             catch (ServerRejectedException ex)
             {
                 state.IsOnline = true;
+                if (item.Kind == OutboxKind.Recognition)
+                {
+                    // Statistics only: a refusal must never hold back fiscal data.
+                    await MarkAsync(item.Position, OutboxStatus.Sent, $"skipped {ex.Code}: {ex.Detail}", ct);
+                    LogRejected(logger, item.Kind, item.ItemId, ex.Code, ex.Detail);
+                    continue;
+                }
+
                 var transient = TransientCodes.Contains(ex.Code);
                 await MarkAsync(item.Position, transient ? OutboxStatus.Pending : OutboxStatus.Rejected, $"{ex.Code}: {ex.Detail}", ct);
                 if (!transient)
@@ -185,6 +193,9 @@ public sealed partial class SyncService(
                 break;
             case OutboxKind.ZReport:
                 await api.PostZReportAsync(Deserialize<ZReportSyncDto>(item), ct);
+                break;
+            case OutboxKind.Recognition:
+                await api.PostRecognitionAsync(Deserialize<RecognitionSyncDto>(item), ct);
                 break;
             default:
                 throw new InvalidOperationException($"Unknown outbox kind {item.Kind}.");

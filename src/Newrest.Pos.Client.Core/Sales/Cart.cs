@@ -17,6 +17,23 @@ public sealed partial class CartLine(Guid articleId, string code, string label, 
     [ObservableProperty]
     private LineSource _source = source;
 
+    /// <summary>Recognised with a medium confidence: highlighted until confirmed or switched to the second choice.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasAlternative))]
+    private bool _needsReview;
+
+    /// <summary>Second choice proposed by the vision service (one tap to switch).</summary>
+    public Data.MenuButton? Alternative { get; set; }
+
+    public decimal? Confidence { get; set; }
+
+    public bool HasAlternative => NeedsReview && Alternative is not null;
+
+    public string? ReviewText => Confidence is { } c ? $"Reconnu à {c * 100:0} %" + (Alternative is { } a ? $" — sinon {a.Label} ?" : "") : null;
+
+    /// <summary>Predictions of the vision service this line comes from (index in the response, and how it was validated).</summary>
+    public List<(int Index, LineSource Source)> Predictions { get; } = [];
+
     public Guid ArticleId { get; } = articleId;
     public string Code { get; } = code;
     public string Label { get; } = label;
@@ -70,10 +87,11 @@ public sealed partial class Cart : ObservableObject
 
     public bool IsEmpty => Lines.Count == 0 || Lines.All(l => l.Quantity == 0);
 
-    public CartLine Add(DailyMenuItemDto item, decimal vatRate, bool isSubsidizable, LineSource source = LineSource.Manual)
+    /// <param name="separate">Always a new line (a line to review keeps its own highlight and second choice).</param>
+    public CartLine Add(DailyMenuItemDto item, decimal vatRate, bool isSubsidizable, LineSource source = LineSource.Manual, bool separate = false)
     {
         ArgumentNullException.ThrowIfNull(item);
-        var existing = Lines.FirstOrDefault(l => l.ArticleId == item.ArticleId && l.UnitPrice == item.EffectivePrice);
+        var existing = separate ? null : Lines.FirstOrDefault(l => l.ArticleId == item.ArticleId && l.UnitPrice == item.EffectivePrice && !l.NeedsReview);
         if (existing is not null)
         {
             existing.Quantity++;

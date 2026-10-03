@@ -33,6 +33,13 @@ public partial class MainWindow : Window
 
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.F2 && (DataContext as ShellViewModel)?.CurrentPage is SaleViewModel sale && sale.CaptureTrayCommand.CanExecute(null))
+        {
+            e.Handled = true;
+            sale.CaptureTrayCommand.Execute(null);
+            return;
+        }
+
         if (_wedge is not null && e.Key == Key.Enter && _wedge.OnCharacter('\r'))
         {
             e.Handled = true;

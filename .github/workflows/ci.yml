@@ -67,7 +67,15 @@ jobs:
           --collect:"XPlat Code Coverage" --results-directory ./TestResults/api
           --logger "trx;LogFileName=api.trx"
 
-      - name: End-to-end register scenarios (headless register + API + SQL Server, offline, recovery)
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+
+      - name: Vision service environment (register ↔ real vision service scenario)
+        working-directory: vision
+        run: uv sync --locked --no-dev
+
+      - name: End-to-end register scenarios (headless register + API + SQL Server + vision service, offline, recovery)
         run: >
           dotnet test tests/Newrest.Pos.Scenarios.Tests --no-build --configuration Release
           --results-directory ./TestResults/scenarios --logger "trx;LogFileName=scenarios.trx"

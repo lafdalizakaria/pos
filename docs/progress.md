@@ -136,7 +136,7 @@ Voir `docs/assumptions.md` A31–A48. Points saillants :
 - Synchronisation descendante pour les caisses (catalogue, menus publiés, badges, soldes) : phase 3.
 - Stockage des photos sur blob storage, si retenu par la DSI : nouvelle implémentation de `IFileStorage`.
 
-## Phase 3 — Caisse WPF, hors ligne, synchronisation ✅ (en attente de validation)
+## Phase 3 — Caisse WPF, hors ligne, synchronisation ✅ (validée)
 
 ### Livré
 
@@ -199,5 +199,73 @@ Voir `docs/assumptions.md` A49–A65. Points saillants à valider :
 - Sauvegarde SQLite en rotation, installeur MSIX, mise à jour automatique : phase 6.
 - Rapport de rapprochement débits/tickets : phase 6.
 
-## Phase 4 — Service vision (à venir)
-FastAPI local, providers mock et Gemini, intégration dans la vente avec seuils de confiance, feedback, dataset.
+## Phase 4 — Service vision ✅ (en attente de validation)
+
+### Livré
+
+**Service vision local** (`vision/`, Python 3.12, FastAPI, dépendances verrouillées par uv)
+- `POST /recognize` (image + articles du menu du jour + photos de référence) → `{items: [{article_code, confidence,
+  bbox, bbox_yolo, alternatives}], provider, latency_ms, …}` ; `POST /feedback` ; `GET /health` ;
+  `GET /camera/capture` (OpenCV, exposition/balance fixes, **recadrage plateau**) ; `POST /dataset/upload`.
+- Providers derrière une interface commune, choisis par configuration **relue à chaud** (`vision.json`) :
+  `mock` (déterministe, scénarios par image), `gemini` (Google Gen AI : schéma JSON avec `article_code` en énumération
+  des candidats, température 0,1, image 1024 px, photos de référence, `box_2d` 0-1000 → pixels → YOLO), `yolo` et
+  `hybrid` réservés à la phase 5 (503 explicite).
+- Garde-fous : codes hors menu **écartés**, délai par requête (504), erreurs du modèle isolées (502/503), image
+  invalide (400), **visage détecté → ni envoyé au modèle ni stocké** (422), écoute 127.0.0.1 uniquement.
+- Dataset local : image + prédictions + lignes validées + **labels YOLO** dérivés (boîte gardée si la caissière
+  corrige l'article), « à annoter » si une unité n'a pas été détectée, rotation, envoi central optionnel (URL signée).
+- Clé Gemini : **fichier chiffré DPAPI (portée machine)** sur le poste ; installation en service Windows (NSSM) par
+  `deploy/vision/install-vision-service.ps1`.
+
+**Caisse** (`Client.Core/Vision`, écran de vente WPF)
+- Bouton **📷 Photo plateau** (ou F2) : capture via le service, reconnaissance bornée à **6 s** ; tout échec (service
+  arrêté, caméra, délai, modèle, visage) affiche un message et laisse la saisie manuelle — la vente n'est jamais bloquée.
+- Seuils (configurables, défaut 0,60/0,90) : ≥ 0,90 ajout automatique ; 0,60–0,90 ligne **en surbrillance** avec
+  « OK » et **« → 2e choix »** ; < 0,60 bandeau « catégorie : choisir dans le menu », l'article choisi est rattaché à
+  la prédiction. Les lignes du ticket portent leur origine (`VisionAuto/Confirmed/Corrected/Manual`).
+- Après la vente : retour d'apprentissage au service (labels du dataset) et statistiques au serveur via l'outbox
+  (jamais bloquant pour la file fiscale). Photos de référence téléchargées une fois et mises en cache.
+
+**Serveur et back-office**
+- `POST /api/v1/register/recognitions` (idempotent), `GET /api/v1/register/photos/{id}`, articles synchronisés avec
+  description visuelle et photos (l'ajout/suppression d'une photo déclenche la synchronisation incrémentale).
+- Page **Performance vision** + `GET /api/v1/vision/stats` : plateaux, indisponibilités, latence moyenne/p95, taux
+  d'ajout automatique et de correction par site et par provider, articles les plus corrigés, confusions fréquentes ;
+  cloisonnée par périmètre.
+
+### Vérifications effectuées
+
+| Vérification | Résultat |
+|---|---|
+| Build Release complet (avertissements = erreurs), `dotnet format`, `ruff check` + `ruff format --check` | ✅ |
+| Domain 104 · Devices 9 · Intégration SQL 13 · API **31** · Scénarios caisse **20** | ✅ 177 tests .NET |
+| Service vision (pytest) : schéma de réponse, **rejet des codes hors menu**, **délai dépassé**, erreurs provider, visages, dataset/labels, envoi central, requête Gemini (faux client : schéma, température, 1024 px, photos), clé DPAPI, caméra, bascule de provider à chaud, écoute locale | ✅ 44 tests |
+| Vente assistée (3 seuils, 2e choix, catégorie, retour d'apprentissage, statistiques serveur, origine des lignes du ticket) : **plateau encaissé en moins de 10 s** (assertion du test) | ✅ |
+| Service lent (30 s) → repli manuel en < 3 s, vente encaissée ; service arrêté ; modèle en erreur | ✅ |
+| **Caisse + vrai service Python** (provider mock, port local) : photo → propositions → encaissement → dataset avec lignes validées et labels YOLO ; caméra absente signalée | ✅ |
+| Couverture lignes | ✅ Domain 90,3 %, Application 90,2 % (seuils 80 %) ; Client.Core 77,9 % (scénarios) |
+| Back-office dans le navigateur (parcours complet + page Performance vision avec données) | ✅ |
+| **Appel réel à Gemini** | ⚠️ non effectué : aucune clé dans cet environnement. Requête et analyse de réponse testées avec un faux client ; premier essai réel à faire avec une clé de test (`VISION_PROVIDER=gemini`, `GET /health`, une photo) |
+| Caméra réelle, DPAPI, service Windows (NSSM), WPF | ⚠️ Windows requis : recette sur un poste caisse |
+
+Défauts trouvés et corrigés : OpenCV 5 sans cascades de Haar (version bornée < 5), limite de 1 Mo des champs de
+formulaire pour les photos de référence (passées en fichiers), téléchargement concurrent des photos (sérialisé),
+variables d'environnement vides interprétées comme des valeurs, image avec visage initialement envoyée au modèle
+(désormais refusée avant tout traitement).
+
+### Décisions prises
+Voir `docs/assumptions.md` A66–A81. Points saillants à valider :
+- **Clé Gemini en coffre DPAPI local** plutôt que relayée par le serveur (latence, pas de point de panne central).
+- Caméra lue par le service vision ; recadrage réglé et contrôlé à l'installation de chaque caisse.
+- Image avec visage : refusée (saisie manuelle) — faux positifs à mesurer pendant le pilote.
+- Payer sans toucher une ligne en surbrillance vaut confirmation.
+- Transfert des images de plateau à Google (Gemini) : à déclarer à la CNDP (`docs/privacy.md`).
+
+### Reste à faire / points ouverts
+- Essai réel Gemini sur des photos de plateaux Newrest (latence et précision réelles, réglage des seuils).
+- Réglage des seuils par site depuis le back-office (aujourd'hui par caisse, `Register:Vision`).
+- Phase 5 : entraînement YOLO sur le dataset collecté, providers YOLO et Hybrid, déploiement des modèles depuis le
+  serveur, calibration des confiances.
+
+## Phase 5 — Entraînement YOLO, providers YOLO/Hybrid (à venir)

@@ -182,6 +182,7 @@ public sealed class CatalogService(IPosDbContext db, AccessControl access, Audit
         access.RequireAnyRole(PosRoles.Admin);
         var photo = await db.ArticlePhotos.SingleOrDefaultAsync(p => p.Id == photoId && p.ArticleId == articleId, ct)
                     ?? throw new NotFoundException("ArticlePhoto", photoId);
+        _ = await db.Articles.SingleAsync(a => a.Id == articleId, ct); // tracked: its row version moves, registers re-sync the photo list
         db.ArticlePhotos.Remove(photo);
         audit.Record(AuditActions.Updated, nameof(Article), articleId, before: new { PhotoRemoved = photo.StoragePath });
         await db.SaveChangesAsync(ct);
@@ -191,6 +192,14 @@ public sealed class CatalogService(IPosDbContext db, AccessControl access, Audit
     public async Task<PhotoContent?> OpenPhotoAsync(Guid photoId, CancellationToken ct = default)
     {
         access.RequireBackOfficeUser();
+        return await ReadPhotoAsync(photoId, ct);
+    }
+
+    /// <summary>Reference photo downloaded by a register (authorised by the register token at the endpoint).</summary>
+    public Task<PhotoContent?> OpenPhotoForRegisterAsync(Guid photoId, CancellationToken ct = default) => ReadPhotoAsync(photoId, ct);
+
+    private async Task<PhotoContent?> ReadPhotoAsync(Guid photoId, CancellationToken ct)
+    {
         var path = await db.ArticlePhotos.AsNoTracking().Where(p => p.Id == photoId).Select(p => p.StoragePath).SingleOrDefaultAsync(ct);
         if (path is null || await storage.OpenReadAsync(path, ct) is not { } stream)
         {

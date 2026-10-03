@@ -5,8 +5,8 @@
 .DESCRIPTION
   - Copies vision/ to the install folder and creates its virtual environment with uv (Python 3.12, locked deps).
   - Registers "NewrestPosVision" with NSSM: automatic start, restart on failure, logs rotated in <DataFolder>\logs.
-  - The Gemini key is NOT written in any file: it is passed with -GeminiApiKey and stored in the service
-    environment (registry key readable by Administrators/SYSTEM only), or omitted to run the mock/yolo providers.
+  - The Gemini key is never stored in clear: it is passed with -GeminiApiKey and written to <DataFolder>\gemini.key
+    encrypted with DPAPI (machine scope; folder readable by Administrators/SYSTEM only). Omit it for mock/yolo.
   - Runtime switch (mock -> gemini -> yolo -> hybrid) without redeploying: edit <DataFolder>\vision.json.
 
 .EXAMPLE
@@ -65,19 +65,26 @@ $python = Join-Path $InstallFolder ".venv\Scripts\python.exe"
 & $Nssm set $ServiceName AppExit Default Restart
 & $Nssm set $ServiceName AppRestartDelay 2000
 
+$keyFile = Join-Path $DataFolder "gemini.key"
+if ($GeminiApiKey) {
+    Add-Type -AssemblyName System.Security
+    $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($GeminiApiKey)
+    try {
+        $bytes = [Text.Encoding]::UTF8.GetBytes([Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr))
+        $protected = [Security.Cryptography.ProtectedData]::Protect($bytes, $null, [Security.Cryptography.DataProtectionScope]::LocalMachine)
+        [IO.File]::WriteAllBytes($keyFile, $protected)
+        [Array]::Clear($bytes, 0, $bytes.Length)
+    } finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+}
 $environment = @(
     "VISION_HOST=127.0.0.1",
     "VISION_PORT=$Port",
     "VISION_PROVIDER=$Provider",
     "VISION_CONFIG_FILE=$overrides",
-    "VISION_DATASET_DIR=$DataFolder\dataset"
+    "VISION_DATASET_DIR=$DataFolder\dataset",
+    "VISION_GEMINI_API_KEY_FILE=$keyFile"
 )
-if ($GeminiApiKey) {
-    $plain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($GeminiApiKey))
-    $environment += "GEMINI_API_KEY=$plain"
-}
 & $Nssm set $ServiceName AppEnvironmentExtra @environment | Out-Null
-Remove-Variable plain -ErrorAction SilentlyContinue
 
 & $Nssm start $ServiceName
 Start-Sleep -Seconds 3
