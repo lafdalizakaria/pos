@@ -75,6 +75,36 @@ public sealed class PosApiClient(HttpClient http, RegisterOptions options, IDevi
     public Task<SyncAck> PostRecognitionAsync(RecognitionSyncDto dto, CancellationToken ct = default) =>
         SendAsync<SyncAck>(HttpMethod.Post, "register/recognitions", dto, ct);
 
+    public Task<RegisterVisionConfigDto> GetVisionConfigAsync(CancellationToken ct = default) =>
+        SendAsync<RegisterVisionConfigDto>(HttpMethod.Get, "register/vision", null, ct);
+
+    public async Task ReportVisionStatusAsync(RegisterVisionReportDto report, CancellationToken ct = default) =>
+        await SendAsync<JsonElement?>(HttpMethod.Post, "register/vision/status", report, ct);
+
+    /// <summary>Streams a model file to <paramref name="destination"/> (no timeout: models weigh tens of MB).</summary>
+    public async Task DownloadVisionModelAsync(Guid modelId, string destination, CancellationToken ct = default)
+    {
+        await RefreshTokenAsync(force: false, ct);
+        var baseUrl = options.ServerUrl ?? throw new InvalidOperationException("Adresse du serveur non configurée.");
+        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(baseUrl, ApiVersion.BasePath.TrimStart('/') + $"/register/vision-models/{modelId}/file"));
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _token);
+        try
+        {
+            using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                await ReadAsync<JsonElement>(response, ct); // throws the server's refusal
+            }
+
+            await using var file = File.Create(destination);
+            await response.Content.CopyToAsync(file, ct);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException && !ct.IsCancellationRequested)
+        {
+            throw new ServerUnreachableException("Téléchargement du modèle interrompu.", ex);
+        }
+    }
+
     /// <summary>Reference photo of an article (null when it no longer exists).</summary>
     public async Task<byte[]?> GetPhotoAsync(Guid photoId, CancellationToken ct = default)
     {
@@ -173,6 +203,11 @@ public sealed class PosApiClient(HttpClient http, RegisterOptions options, IDevi
     {
         if (response.IsSuccessStatusCode)
         {
+            if (response.StatusCode == HttpStatusCode.NoContent)
+            {
+                return default!;
+            }
+
             return (await response.Content.ReadFromJsonAsync<T>(Json, ct))!;
         }
 

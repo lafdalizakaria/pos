@@ -166,3 +166,25 @@ Dans tous les cas la vente se poursuit en saisie manuelle : la vision ne bloque 
 Back-office → **Performance vision** : plateaux, indisponibilités, latence moyenne et p95, taux d'ajout automatique et
 de correction par site et par provider, articles les plus corrigés, confusions fréquentes (candidats à de nouvelles
 photos de référence ou à une meilleure description visuelle).
+
+## Modèles de reconnaissance (phase 5)
+
+### Entraîner et publier un modèle
+1. Récupérer les datasets des caisses (ou du conteneur central), puis sur la machine d'entraînement : voir
+   `vision/training/README.md` (`annotate` → annotation → `build` → `train`). Le modèle n'est produit que si sa mAP50
+   de validation atteint 0,5.
+2. Back-office → **Modèles vision** → importer `model.onnx` + `manifest.json` (brouillon ; les classes sans article au
+   catalogue sont signalées) → vérifier la mAP50 → **Publier**.
+3. **Réglages par site** : moteur `YOLO (local)` ou `Hybride`, modèle « Dernier publié » (mise à jour automatique) ou
+   une version fixe ; seuils. Commencer par un site pilote en **hybride**.
+4. Sous 5 minutes, **État des caisses** doit afficher le moteur et la version attendus avec ✔. Sinon, lire l'erreur
+   (service injoignable, modèle altéré, forcé localement).
+
+### Revenir en arrière
+Choisir l'ancienne version dans les réglages du site (elle est encore installée sur les caisses : bascule immédiate),
+ou repasser le site sur Gemini. En urgence sur un poste : `vision.json` → `{"provider": "gemini"}`.
+
+### Ajuster les seuils
+Page **Performance vision**, filtrer sur le moteur (ex. `yolo:20261003`) : la section *Calibration des seuils* donne la
+précision par tranche de confiance et les seuils suggérés (97 % de justes pour l'ajout automatique). Les reporter dans
+les réglages du site ; ils s'appliquent à la synchronisation suivante.

@@ -73,7 +73,7 @@ jobs:
 
       - name: Vision service environment (register ↔ real vision service scenario)
         working-directory: vision
-        run: uv sync --locked --no-dev
+        run: uv sync --locked
 
       - name: End-to-end register scenarios (headless register + API + SQL Server + vision service, offline, recovery)
         run: >
@@ -113,7 +113,7 @@ jobs:
           uv run ruff check .
           uv run ruff format --check .
 
-      - name: Tests (mock provider and fake Gemini client, no network, no key)
+      - name: Tests (mock, YOLO with a test ONNX model, fake Gemini client; no network, no key)
         run: uv run pytest -q --junitxml=../TestResults/vision/pytest.xml
 
       - uses: actions/upload-artifact@v4

@@ -11,19 +11,22 @@ menu du jour ; il renvoie les articles reconnus. Il ne bloque jamais une vente :
 | `POST /feedback` | `{recognition_id, ticket_id?, lines: [{article_code, quantity, source, prediction_index?}]}` | `{stored, labels, needs_annotation}` |
 | `GET /health` | — | `{status, provider, provider_ready, detail, dataset_items}` |
 | `POST /dataset/upload` | — | `{uploaded}` (si `VISION_DATASET_UPLOAD_URL`) |
+| `GET /models` · `PUT /models/{version}` | multipart `model` (ONNX) + `manifest` (JSON) | modèles installés ; installation (empreinte et forme de sortie contrôlées) |
+| `PUT /runtime` | `{provider, model_version, hybrid_min_confidence}` | réglages du site poussés par la caisse → `/health` |
 
 Erreurs : `{"detail": {"code", "message"}}` — 400 `invalid_image`, 413 `image_too_large`, 422 `invalid_candidates` /
 `no_candidates`, 502 `invalid_provider_answer` / `provider_error`, 503 `provider_unavailable`, 504 `timeout`.
 Les codes renvoyés par un modèle hors de la liste des candidats sont **écartés** (`rejected_codes`). Les boîtes sont
 en pixels de l'image envoyée par la caisse.
 
-## Providers (`VISION_PROVIDER`, modifiable à chaud dans `VISION_CONFIG_FILE`)
+## Providers (choisis par site dans le back-office ; `VISION_CONFIG_FILE` force une valeur localement)
 
 | Provider | Usage |
 |---|---|
 | `mock` | Tests et démonstrations : réponse déterministe par image (1 à 3 articles, confiances 0,95 / 0,78 / 0,45 couvrant les trois seuils), ou exacte via `VISION_MOCK_SCENARIOS_DIR/<sha256>.json` |
 | `gemini` | Google Gen AI : sortie JSON contrainte par schéma (`article_code` = enum des candidats), température 0,1, image ramenée à 1024 px, photos de référence jointes, `box_2d` 0-1000 converties en pixels puis YOLO |
-| `yolo`, `hybrid` | Phase 5 (modèle local entraîné sur le dataset collecté) ; répondent 503 en attendant |
+| `yolo` | Modèle local (ONNX Runtime, CPU, sans Internet) entraîné sur le dataset collecté (`training/`) ; seuls les articles du menu du jour peuvent sortir |
+| `hybrid` | YOLO, puis Gemini seulement si YOLO hésite ou si le menu contient un article inconnu du modèle ; fusion des réponses par boîte |
 
 ## Dataset
 
@@ -43,3 +46,5 @@ uv run python -m app.main   # http://127.0.0.1:8765/docs
 ```
 
 Installation sur un poste caisse : `deploy/vision/README.md`.
+
+Entraînement d'un modèle : `training/README.md`.

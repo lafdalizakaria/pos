@@ -30,7 +30,7 @@ public static class Outbox
 /// </summary>
 public sealed partial class SyncService(
     LocalStore store, PosApiClient api, ReferenceCache cache, ConnectivityState state, RegisterOptions options, TimeProvider clock,
-    ILogger<SyncService> logger)
+    Vision.VisionDeploymentService vision, ILogger<SyncService> logger)
 {
     /// <summary>Refusals that resolve themselves once earlier items arrive (or the server catches up).</summary>
     private static readonly HashSet<string> TransientCodes =
@@ -71,15 +71,20 @@ public sealed partial class SyncService(
         }
     }
 
+    /// <summary>Last vision deployment started after a reference sync (it runs outside the fiscal queue; exposed for tests).</summary>
+    public Task VisionDeployment { get; private set; } = Task.CompletedTask;
+
     public async Task RunOnceAsync(bool forceReference = false, CancellationToken ct = default)
     {
         await _runLock.WaitAsync(ct);
+        var referencePulled = false;
         try
         {
             await PushOutboxAsync(ct);
             if (forceReference || clock.GetUtcNow() - _lastReferenceSync >= options.ReferenceSyncInterval)
             {
                 await PullReferenceAsync(ct);
+                referencePulled = true;
             }
         }
         catch (ServerUnreachableException ex)
@@ -91,6 +96,24 @@ public sealed partial class SyncService(
         {
             state.PendingCount = await store.CountPendingAsync(ct);
             _runLock.Release();
+        }
+
+        // A model download can take minutes on a site link: never inside the fiscal queue's lock.
+        if (referencePulled && options.Vision.ApplySiteSettings && VisionDeployment.IsCompleted)
+        {
+            VisionDeployment = DeployVisionAsync(ct);
+        }
+    }
+
+    private async Task DeployVisionAsync(CancellationToken ct)
+    {
+        try
+        {
+            await vision.ApplyAsync(ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            LogVisionFailed(logger, ex.Message);
         }
     }
 
@@ -215,6 +238,9 @@ public sealed partial class SyncService(
     }
 
     private static T Deserialize<T>(OutboxItem item) => JsonSerializer.Deserialize<T>(item.PayloadJson, LocalStore.Json)!;
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Vision deployment failed: {Reason}")]
+    private static partial void LogVisionFailed(ILogger logger, string reason);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Server unreachable, working offline: {Reason}")]
     private static partial void LogOffline(ILogger logger, string reason);

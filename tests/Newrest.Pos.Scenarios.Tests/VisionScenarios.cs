@@ -45,6 +45,49 @@ public sealed class FakeVisionClient : IVisionClient
         Feedbacks.Add(feedback);
         return Task.FromResult(true);
     }
+
+    // ----- Deployment side: behaves like the service (installed models, runtime) -----
+
+    public bool Reachable { get; set; } = true;
+
+    public string Provider { get; set; } = "gemini";
+
+    public string? ModelVersion { get; set; }
+
+    public bool LocalOverride { get; set; }
+
+    public Dictionary<string, byte[]> Installed { get; } = [];
+
+    public List<VisionRuntimeRequest> RuntimeRequests { get; } = [];
+
+    private VisionHealth Health() => new("ok", Provider, true, null, ModelVersion, [.. Installed.Keys], LocalOverride);
+
+    public Task<VisionHealth> GetHealthAsync(CancellationToken ct) =>
+        Reachable ? Task.FromResult(Health()) : throw new VisionUnavailableException("Service de reconnaissance injoignable.");
+
+    public async Task InstallModelAsync(string version, Stream model, string manifestJson, CancellationToken ct)
+    {
+        using var copy = new MemoryStream();
+        await model.CopyToAsync(copy, ct);
+        System.Text.Json.JsonDocument.Parse(manifestJson).RootElement.GetProperty("version").GetString().Should().Be(version);
+        Installed[version] = copy.ToArray();
+    }
+
+    public Task<VisionHealth> SetRuntimeAsync(VisionRuntimeRequest request, CancellationToken ct)
+    {
+        RuntimeRequests.Add(request);
+        if (request.ModelVersion is { } v && !Installed.ContainsKey(v))
+        {
+            throw new VisionUnavailableException("Service de reconnaissance : model_not_installed.");
+        }
+
+        if (!LocalOverride)
+        {
+            (Provider, ModelVersion) = (request.Provider, request.ModelVersion);
+        }
+
+        return Task.FromResult(Health());
+    }
 }
 
 [Collection(ScenarioCollection.Name)]

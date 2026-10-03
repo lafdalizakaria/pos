@@ -38,7 +38,8 @@ public sealed partial class TrayRecognitionService(
 
     public bool IsEnabled => options.Vision.Enabled;
 
-    public RecognitionConfidencePolicy Policy { get; } = new(options.Vision.LowThreshold, options.Vision.HighThreshold);
+    /// <summary>Thresholds of the site (updated by <see cref="VisionDeploymentService"/>), or of the local configuration.</summary>
+    public RecognitionConfidencePolicy Policy => new(options.Vision.LowThreshold, options.Vision.HighThreshold);
 
     public async Task<TrayRecognition> RecognizeAsync(IReadOnlyList<MenuCategoryGroup> menu, CancellationToken ct = default)
     {
@@ -131,7 +132,8 @@ public sealed partial class TrayRecognitionService(
     {
         ArgumentNullException.ThrowIfNull(recognition);
         var validated = ticketId is null ? [] : BuildLines(lines);
-        var dto = new RecognitionSyncDto(recognition.Id, ticketId, recognition.RecognitionId, recognition.CapturedAt, recognition.Provider,
+        var provider = recognition.Provider.Length > 32 ? recognition.Provider[..32] : recognition.Provider;
+        var dto = new RecognitionSyncDto(recognition.Id, ticketId, recognition.RecognitionId, recognition.CapturedAt, provider,
             recognition.Failed ? recognition.ElapsedMs : recognition.ServiceLatencyMs, recognition.Failed,
             [.. recognition.RawItems.Select(i => new RecognitionPredictionDto(i.ArticleCode, Math.Clamp(i.Confidence, 0m, 1m),
                 i.Alternatives?.FirstOrDefault()?.ArticleCode, i.Alternatives?.FirstOrDefault()?.Confidence))],

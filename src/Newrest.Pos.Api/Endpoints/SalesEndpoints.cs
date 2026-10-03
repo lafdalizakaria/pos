@@ -15,8 +15,8 @@ public static class SalesEndpoints
             .WithSummary("Recomputes the SHA-256 chain of the register: gaps, broken links, altered tickets.");
         g.MapGet("/z-reports", (Guid? pointOfSaleId, Guid? registerId, DateOnly? from, DateOnly? to, TicketQueryService s, CancellationToken ct) =>
             s.ListZReportsAsync(pointOfSaleId, registerId, from, to, ct));
-        g.MapGet("/vision/stats", (DateOnly from, DateOnly to, Guid? siteId, RecognitionService s, CancellationToken ct) =>
-                s.GetStatsAsync(from, to, siteId, ct))
+        g.MapGet("/vision/stats", (DateOnly from, DateOnly to, Guid? siteId, string? provider, RecognitionService s, CancellationToken ct) =>
+                s.GetStatsAsync(from, to, siteId, ct, provider))
             .WithTags("Vision").WithSummary("Tray recognition KPIs: auto-accept and correction rates, latency, confusions by article.");
         return api;
     }

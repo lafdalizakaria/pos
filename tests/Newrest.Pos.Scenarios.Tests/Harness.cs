@@ -36,6 +36,9 @@ public sealed class ApiFactory(string connectionString) : WebApplicationFactory<
 {
     public const string UserKey = "scenario-user-signing-key-0123456789-abcdef";
 
+    /// <summary>File storage of this API instance (reference photos, models).</summary>
+    public string StoragePath { get; } = Path.Combine(Path.GetTempPath(), "pos-scenarios-" + Guid.NewGuid().ToString("N"));
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
@@ -43,7 +46,7 @@ public sealed class ApiFactory(string connectionString) : WebApplicationFactory<
         builder.UseSetting("Authentication:Users:DevSigningKey", UserKey);
         builder.UseSetting("Authentication:Users:Audience", "newrest-pos-api");
         builder.UseSetting("Authentication:Registers:SigningKey", "scenario-register-signing-key-0123456789-ab");
-        builder.UseSetting("Storage:RootPath", Path.Combine(Path.GetTempPath(), "pos-scenarios"));
+        builder.UseSetting("Storage:RootPath", StoragePath);
         builder.UseSetting("Security:PinHashIterations", "1000");
         builder.UseSetting("Serilog:MinimumLevel:Default", "Warning");
     }

@@ -115,3 +115,45 @@ internal sealed class AuditLogConfiguration : IEntityTypeConfiguration<AuditLog>
         b.HasIndex(x => new { x.EntityType, x.EntityId });
     }
 }
+
+internal sealed class VisionModelConfiguration : IEntityTypeConfiguration<VisionModel>
+{
+    public void Configure(EntityTypeBuilder<VisionModel> b)
+    {
+        b.Property(x => x.Version).HasMaxLength(32);
+        b.Property(x => x.ClassesJson).HasMaxLength(-1);
+        b.Property(x => x.ManifestJson).HasMaxLength(-1);
+        b.Property(x => x.Sha256).HasMaxLength(64).IsFixedLength();
+        b.Property(x => x.StoragePath).HasMaxLength(500);
+        b.Property(x => x.UploadedBy).HasMaxLength(256);
+        b.Property(x => x.Notes).HasMaxLength(1000);
+        b.Property(x => x.Map50).HasPrecision(9, 4);
+        b.Ignore(x => x.Classes);
+        b.HasIndex(x => x.Version).IsUnique();
+    }
+}
+
+internal sealed class SiteVisionSettingsConfiguration : IEntityTypeConfiguration<SiteVisionSettings>
+{
+    public void Configure(EntityTypeBuilder<SiteVisionSettings> b)
+    {
+        b.Property(x => x.LowThreshold).HasPrecision(9, 4);
+        b.Property(x => x.HighThreshold).HasPrecision(9, 4);
+        b.Property(x => x.HybridMinConfidence).HasPrecision(9, 4);
+        b.HasOne<Site>().WithMany().HasForeignKey(x => x.SiteId);
+        b.HasOne<VisionModel>().WithMany().HasForeignKey(x => x.ModelId);
+        b.HasIndex(x => x.SiteId).IsUnique();
+    }
+}
+
+internal sealed class RegisterVisionStatusConfiguration : IEntityTypeConfiguration<RegisterVisionStatus>
+{
+    public void Configure(EntityTypeBuilder<RegisterVisionStatus> b)
+    {
+        b.Ignore(x => x.RegisterId);
+        b.Property(x => x.Provider).HasMaxLength(32);
+        b.Property(x => x.ModelVersion).HasMaxLength(32);
+        b.Property(x => x.Error).HasMaxLength(500);
+        b.HasOne<Register>().WithOne().HasForeignKey<RegisterVisionStatus>(x => x.Id);
+    }
+}

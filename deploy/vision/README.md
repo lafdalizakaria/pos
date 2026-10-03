@@ -11,8 +11,10 @@ Prérequis sur le poste : [uv](https://docs.astral.sh/uv/) (installe Python 3.12
 ```
 
 Le service `NewrestPosVision` écoute sur `http://127.0.0.1:8765` (refus de démarrer sur une autre interface sauf
-`VISION_ALLOW_REMOTE=true`). Changer de provider sans redéployer la caisse :
-`C:\ProgramData\Newrest\POS\Vision\vision.json` → `{"provider": "gemini"}` (pris en compte à la requête suivante).
+`VISION_ALLOW_REMOTE=true`). Le moteur (Gemini, YOLO, hybride) et le modèle YOLO se choisissent **par site dans le
+back-office** (page *Modèles vision*) : la caisse télécharge le modèle, l'installe dans le service et le bascule
+(`runtime.json`). En secours, `C:\ProgramData\Newrest\POS\Vision\vision.json` → `{"provider": "gemini"}` force une valeur
+localement (prise en compte à la requête suivante ; signalée en back-office « forcé localement »).
 Contrôle : `Invoke-RestMethod http://127.0.0.1:8765/health`. Journaux : `C:\ProgramData\Newrest\POS\Vision\logs`.
 
 Rotation de la clé Gemini : relancer le script avec `-GeminiApiKey` (le fichier est réécrit, relu automatiquement).

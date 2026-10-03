@@ -7,7 +7,8 @@
   - Registers "NewrestPosVision" with NSSM: automatic start, restart on failure, logs rotated in <DataFolder>\logs.
   - The Gemini key is never stored in clear: it is passed with -GeminiApiKey and written to <DataFolder>\gemini.key
     encrypted with DPAPI (machine scope; folder readable by Administrators/SYSTEM only). Omit it for mock/yolo.
-  - Runtime switch (mock -> gemini -> yolo -> hybrid) without redeploying: edit <DataFolder>\vision.json.
+  - Provider and YOLO model are normally chosen per site in the back-office: the register installs the model and
+    switches the service (<DataFolder>\runtime.json). <DataFolder>\vision.json forces a value locally (emergency).
 
 .EXAMPLE
   .\install-vision-service.ps1 -Source ..\..\vision -Provider gemini -GeminiApiKey (Read-Host -AsSecureString)
@@ -31,7 +32,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
     throw "Exécuter ce script en tant qu'administrateur."
 }
 
-New-Item -ItemType Directory -Force -Path $InstallFolder, $DataFolder, "$DataFolder\logs", "$DataFolder\dataset" | Out-Null
+New-Item -ItemType Directory -Force -Path $InstallFolder, $DataFolder, "$DataFolder\logs", "$DataFolder\dataset", "$DataFolder\models" | Out-Null
 robocopy $Source $InstallFolder /MIR /XD .venv data .pytest_cache .ruff_cache __pycache__ tests /NFL /NDL /NJH /NJS | Out-Null
 if ($LASTEXITCODE -ge 8) { throw "Copie impossible ($LASTEXITCODE)." }
 
@@ -41,10 +42,11 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "uv sync a échoué." }
 } finally { Pop-Location }
 
-# Runtime overrides (hot reloaded). Created once: never overwrite the site's settings on upgrade.
+# Local emergency overrides (hot reloaded), empty by default: any key set here wins over the back-office settings.
+# -Provider only sets the initial provider (environment); the site settings pushed by the register replace it.
 $overrides = Join-Path $DataFolder "vision.json"
 if (-not (Test-Path $overrides)) {
-    @{ provider = $Provider } | ConvertTo-Json | Set-Content -Encoding UTF8 $overrides
+    Set-Content -Encoding UTF8 -Path $overrides -Value "{}"
 }
 # Only Administrators and SYSTEM may change the provider or read the data (dataset images).
 icacls $DataFolder /inheritance:r /grant:r "Administrators:(OI)(CI)F" "SYSTEM:(OI)(CI)F" | Out-Null
@@ -82,6 +84,8 @@ $environment = @(
     "VISION_PROVIDER=$Provider",
     "VISION_CONFIG_FILE=$overrides",
     "VISION_DATASET_DIR=$DataFolder\dataset",
+    "VISION_MODELS_DIR=$DataFolder\models",
+    "VISION_RUNTIME_FILE=$DataFolder\runtime.json",
     "VISION_GEMINI_API_KEY_FILE=$keyFile"
 )
 & $Nssm set $ServiceName AppEnvironmentExtra @environment | Out-Null

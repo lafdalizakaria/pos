@@ -46,6 +46,7 @@ public static class DependencyInjection
             sp.GetRequiredService<TimeProvider>()));
         services.AddSingleton<ReferencePhotoCache>();
         services.AddSingleton<TrayRecognitionService>();
+        services.AddSingleton<VisionDeploymentService>();
 
         services.AddSingleton<ShellViewModel>();
         services.AddSingleton(sp => new Lazy<ShellViewModel>(sp.GetRequiredService<ShellViewModel>));

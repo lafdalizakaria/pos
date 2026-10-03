@@ -55,7 +55,8 @@ public sealed class RecognitionService(IPosDbContext db, AccessControl access)
     }
 
     /// <summary>KPIs over [from, to] (dates of capture, UTC), optionally for one site.</summary>
-    public async Task<VisionStatsDto> GetStatsAsync(DateOnly from, DateOnly to, Guid? siteId, CancellationToken ct = default)
+    /// <param name="provider">Optional prefix of the provider label (e.g. <c>gemini</c>, <c>yolo:20261003</c>).</param>
+    public async Task<VisionStatsDto> GetStatsAsync(DateOnly from, DateOnly to, Guid? siteId, CancellationToken ct = default, string? provider = null)
     {
         access.RequireBackOfficeUser();
         var scope = await access.GetScopeAsync(ct);
@@ -70,6 +71,7 @@ public sealed class RecognitionService(IPosDbContext db, AccessControl access)
         var end = new DateTimeOffset(to.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
         var logs = await db.RecognitionLogs.AsNoTracking()
             .Where(l => ids.Contains(l.RegisterId) && l.CapturedAt >= start && l.CapturedAt < end)
+            .Where(l => provider == null || l.Provider.StartsWith(provider))
             .OrderBy(l => l.CapturedAt).Take(50_000).ToListAsync(ct);
 
         var analysed = logs.Select(l => Analyse(l, registers[l.RegisterId].SiteName)).ToList();
@@ -83,7 +85,8 @@ public sealed class RecognitionService(IPosDbContext db, AccessControl access)
                 .OrderByDescending(a => a.Corrected + a.Manual).ThenByDescending(a => a.Sold)],
             [.. analysed.SelectMany(a => a.Confusions).GroupBy(c => c).Select(g => new VisionConfusionDto(g.Key.Predicted, g.Key.Actual, g.Count()))
                 .OrderByDescending(c => c.Count).Take(20)],
-            [.. analysed.GroupBy(a => a.Provider).OrderBy(g => g.Key).Select(g => Summarise(g.Key, [.. g]))]);
+            [.. analysed.GroupBy(a => a.Provider).OrderBy(g => g.Key).Select(g => Summarise(g.Key, [.. g]))],
+            Calibrate(analysed.SelectMany(a => a.Outcomes).ToList()));
     }
 
     private static VisionKpiDto Summarise(string label, IReadOnlyList<Analysed> items)
@@ -101,6 +104,13 @@ public sealed class RecognitionService(IPosDbContext db, AccessControl access)
             Rate(lines.Where(l => l.Source == LineSource.VisionCorrected).Sum(l => l.Quantity), visionLines));
     }
 
+    private static VisionCalibrationDto Calibrate(IReadOnlyCollection<PredictionOutcome> outcomes)
+    {
+        var advice = ThresholdAdvisor.Advise(outcomes);
+        return new VisionCalibrationDto(advice.Predictions, [.. advice.Buckets.Select(b => new VisionBucketDto(b.From, b.To, b.Count, b.Correct, b.Precision))],
+            advice.SuggestedHigh, advice.PrecisionAtHigh, advice.SuggestedLow, advice.PrecisionAtLow);
+    }
+
     private static decimal Rate(int part, int total) => total == 0 ? 0m : Math.Round((decimal)part / total, 4);
 
     private static Analysed Analyse(RecognitionLog log, string site)
@@ -111,11 +121,18 @@ public sealed class RecognitionService(IPosDbContext db, AccessControl access)
         var confusions = lines
             .Where(l => l.PredictionIndex is { } i && i >= 0 && i < predictions.Count && predictions[i].ArticleCode != l.ArticleCode)
             .Select(l => (Predicted: predictions[l.PredictionIndex!.Value].ArticleCode, Actual: l.ArticleCode)).ToList();
-        return new Analysed(site, log.Provider, log.TimedOut, log.LatencyMs, parsed, confusions);
+        // Each prediction of a sold tray: kept (auto or confirmed) = right; corrected or removed by the cashier = wrong.
+        var outcomes = log.TicketId is null ? [] : predictions.Select((p, i) =>
+        {
+            var line = lines.FirstOrDefault(l => l.PredictionIndex == i);
+            return new PredictionOutcome(p.Confidence, line is not null && line.ArticleCode == p.ArticleCode
+                && line.Source is nameof(LineSource.VisionAuto) or nameof(LineSource.VisionConfirmed));
+        }).ToList();
+        return new Analysed(site, log.Provider, log.TimedOut, log.LatencyMs, parsed, confusions, outcomes);
     }
 
     private sealed record AnalysedLine(string Code, int Quantity, LineSource Source);
 
     private sealed record Analysed(string Site, string Provider, bool TimedOut, int LatencyMs, List<AnalysedLine> Lines,
-        List<(string Predicted, string Actual)> Confusions);
+        List<(string Predicted, string Actual)> Confusions, List<PredictionOutcome> Outcomes);
 }

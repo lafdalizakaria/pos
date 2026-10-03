@@ -34,6 +34,12 @@ public interface IPosDbContext
     DbSet<Ticket> Tickets { get; }
 
     DbSet<Domain.Vision.RecognitionLog> RecognitionLogs { get; }
+
+    DbSet<Domain.Vision.VisionModel> VisionModels { get; }
+
+    DbSet<Domain.Vision.SiteVisionSettings> SiteVisionSettings { get; }
+
+    DbSet<Domain.Vision.RegisterVisionStatus> RegisterVisionStatuses { get; }
     DbSet<CashSession> CashSessions { get; }
     DbSet<ZReport> ZReports { get; }
     DbSet<AuditLog> AuditLogs { get; }

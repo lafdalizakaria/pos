@@ -161,6 +161,32 @@ Calculée en caisse, envoyée après tous les tickets de la session ; le serveur
 - Les statistiques ne bloquent jamais la file fiscale : un refus serveur d'un élément `Recognition` est journalisé et
   sauté.
 
+## Phase 5 — Modèles YOLO et déploiement
+
+```
+ Caisses : dataset local (images + lignes validées) ──(URL signée, optionnel)──► stockage d'entraînement
+                                                                                     │
+ Machine d'entraînement : python -m training annotate │ build │ train ◄──────────────┘
+        └─► model.onnx + manifest.json (classes, mAP50, SHA-256)
+                 │ import (empreinte vérifiée)            Back-office « Modèles vision »
+                 ▼                                        brouillon → publié → retiré ; réglages par site
+ API centrale : VisionModels, SiteVisionSettings, RegisterVisionStatuses
+                 │ GET register/vision (toutes les 5 min, hors file fiscale)
+                 ▼
+ Caisse : VisionDeploymentService ── téléchargement + SHA-256 ──► PUT /models/{v} (service : SHA-256 + chargement ONNX)
+                                   └─ seuils du site → écran de vente          PUT /runtime (moteur + modèle)
+                                   └─ POST register/vision/status ──► état des caisses en back-office
+```
+
+- **Providers** : `yolo` (ONNX Runtime, sortie `[1, 4+classes, N]`, classes hors menu masquées, suppression des
+  doublons toutes classes confondues) ; `hybrid` (YOLO puis Gemini si doute ou article inconnu du modèle, fusion par
+  boîte, repli sur YOLO si Gemini échoue).
+- **Configuration du service en couches** : environnement < `runtime.json` (réglages du site poussés par la caisse)
+  < `vision.json` (secours local, prioritaire). Relue à chaque requête : aucun redémarrage.
+- **Retour arrière** : les 3 dernières versions restent installées ; réaffecter une version au site suffit.
+- **Calibration** : `ThresholdAdvisor` (Domain) compare les confiances aux validations des caissières et suggère les
+  seuils (page *Performance vision*, filtrable par moteur/modèle).
+
 ## Tests
 
 | Projet | Contenu |
@@ -170,6 +196,8 @@ Calculée en caisse, envoyée après tous les tickets de la session ; le serveur
 | `tests/Newrest.Pos.Devices.Tests` | ESC/POS (octets, accents, coupe, tiroir, TCP/fichier), détection du lecteur de badge clavier, simulateurs |
 | `tests/Newrest.Pos.Scenarios.Tests` | Caisse complète sans interface (Client.Core + SQLite + simulateurs) contre l'API réelle sur SQL Server : vente badge avec subvention → impression → synchronisation → back-office ; **20 ventes hors ligne** avec plafond atteint, retour réseau avec réponses perdues, sans doublon ; avoir + recharge + Z ; badge perdu ; caisse réinstallée ; file bloquée puis relancée ; écran de vente en 3 gestes |
 | `tests/Newrest.Pos.Scenarios.Tests` (vision) | Vente assistée (seuils, second choix, catégorie, retour d'apprentissage, statistiques serveur, < 10 s), service lent (repli manuel), service arrêté/en erreur, nouvelle photo, photos de référence (téléchargement, envoi, synchronisation incrémentale), client HTTP vision ; **caisse + vrai service Python** (mock) jusqu'au dataset |
+| `tests/Newrest.Pos.Scenarios.Tests` (déploiement) | Réglages du site → téléchargement, contrôle d'empreinte, installation, bascule, seuils appliqués, état remonté ; pas de re-téléchargement ; retour à Gemini et retour arrière ; « dernier publié » vs modèle fixé ; **modèle altéré refusé** ; site désactivé ; service injoignable ; secours local ; **back-office → caisse → vrai service Python avec un modèle ONNX → vente** |
+| `vision/tests` (pytest, phase 5) | Décodage YOLO (letterbox, masque du menu, suppression des doublons, alternatives), stockage des modèles (empreinte, forme, conflit, purge), `/models` et `/runtime`, secours local, hybride (fusion, nouvel article, Gemini lent/en panne), dataset d'entraînement, annotation ; `-m training` : **entraînement réel** + export ONNX + installation + reconnaissance |
 | `vision/tests` (pytest) | Contrat de réponse, rejet des codes hors menu, délai dépassé (504), erreurs provider, images invalides, garde-fou visages, dataset/feedback/labels YOLO, envoi central, schéma et requête Gemini (faux client), clé DPAPI, caméra (recadrage), bascule de provider à chaud, écoute locale uniquement |
 | `tests/e2e/backoffice-smoke.mjs` | Parcours navigateur (Playwright) du back-office, hors CI |
 | `tests/Newrest.Pos.Infrastructure.IntegrationTests` | SQL Server (Testcontainers) : migrations + seed, 50 débits concurrents, idempotence (séquentielle et concurrente), conflit de clé, contre-passation unique, rejeu hors ligne, aller-retour ticket + hash, altération SQL détectée, immutabilité, unicité séquence/session, Z persisté |

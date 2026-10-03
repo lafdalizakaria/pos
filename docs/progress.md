@@ -199,7 +199,7 @@ Voir `docs/assumptions.md` A49–A65. Points saillants à valider :
 - Sauvegarde SQLite en rotation, installeur MSIX, mise à jour automatique : phase 6.
 - Rapport de rapprochement débits/tickets : phase 6.
 
-## Phase 4 — Service vision ✅ (en attente de validation)
+## Phase 4 — Service vision ✅ (validée)
 
 ### Livré
 
@@ -268,4 +268,62 @@ Voir `docs/assumptions.md` A66–A81. Points saillants à valider :
 - Phase 5 : entraînement YOLO sur le dataset collecté, providers YOLO et Hybrid, déploiement des modèles depuis le
   serveur, calibration des confiances.
 
-## Phase 5 — Entraînement YOLO, providers YOLO/Hybrid (à venir)
+## Phase 5 — Entraînement YOLO, providers YOLO/Hybride, déploiement des modèles ✅ (en attente de validation)
+
+### Livré
+
+**Entraînement** (`vision/training`, machine dédiée, `uv sync --extra training`)
+- `annotate` : images où une unité n'a pas été détectée, avec pré-étiquettes, pour CVAT / Label Studio.
+- `build` : dataset YOLO à partir des enregistrements des caisses (plateaux encaissés, labels issus des corrections),
+  annotations intégrées, indices de classes conservés d'un modèle à l'autre, découpage déterministe, rapport.
+- `train` : Ultralytics YOLO (yolo11n par défaut), validation (mAP50/mAP50-95 par article), **refus sous mAP50 0,5**,
+  export ONNX contrôlé, paquet `model.onnx` + `manifest.json` (classes, métriques, SHA-256).
+- `synthetic` : plateaux synthétiques pour démontrer et tester toute la chaîne sans photos réelles.
+
+**Service vision** : provider **`yolo`** (ONNX Runtime, sans PyTorch ni Internet ; classes hors menu masquées) et
+**`hybrid`** (YOLO puis Gemini si doute ou nouvel article, fusion par boîte, repli YOLO) ; stockage des modèles
+(empreinte et forme vérifiées, 3 versions gardées) ; `PUT /models/{v}`, `PUT /runtime` ; configuration en couches
+(environnement < réglages du site < secours local).
+
+**Serveur et back-office** : page **Modèles vision** (import avec contrôle d'empreinte, brouillon → publié → retiré,
+réglages par site : moteur, modèle fixe ou « dernier publié », seuils, activation ; **état de chaque caisse** :
+attendu / appliqué / erreur) ; **calibration des seuils** sur la page Performance vision (précision par tranche de
+confiance, seuils suggérés, filtre par moteur/modèle).
+
+**Caisse** : `VisionDeploymentService` après chaque synchronisation de référence, hors file fiscale : seuils du site
+appliqués à l'écran de vente, téléchargement du modèle **contrôlé SHA-256**, installation dans le service, bascule,
+compte rendu au serveur ; état vision dans la barre d'état.
+
+### Vérifications effectuées
+
+| Vérification | Résultat |
+|---|---|
+| Build Release (avertissements = erreurs), `dotnet format`, modèle EF ↔ migrations (`AddVisionDeployment`), `ruff`, `uv lock --check` | ✅ |
+| Domain 113 · Devices 9 · Intégration SQL 13 · API **33** · Scénarios **25** | ✅ 193 tests .NET |
+| Service vision : **65** tests (décodage YOLO, stockage des modèles, `/models` `/runtime`, hybride, dataset d'entraînement…) | ✅ |
+| **Entraînement réel** (`pytest -m training`, CPU) : 120 plateaux synthétiques → 40 époques → mAP50 ≥ 0,5 → ONNX → installé dans le service → plateau reconnu correctement ; seuil qualité qui refuse un modèle trop faible | ✅ 2 tests, ~3 min |
+| Déploiement : site → téléchargement → empreinte → installation → bascule → seuils appliqués → état remonté ; pas de re-téléchargement ; retour à Gemini et retour arrière ; « dernier publié » vs modèle fixé ; **modèle altéré dans le stockage serveur refusé** (moteur inchangé, erreur visible) ; site désactivé ; service injoignable ; secours local signalé | ✅ |
+| **Bout en bout réel** : modèle publié en back-office → API → caisse → **vrai service Python** (ONNX) → photo → lignes ajoutées par YOLO → vente → statistiques « yolo:<version> » → caisse « à jour » | ✅ |
+| Back-office dans le navigateur : import d'un **modèle réellement entraîné** (mAP50 99,5 % sur données synthétiques), publication, réglage d'un site en hybride, état des caisses | ✅ |
+| Couverture lignes | ✅ Domain 90,4 %, Application 90,2 % ; Client.Core 77,6 % |
+| Entraînement sur **vraies photos de plateaux Newrest** | ⚠️ impossible ici (aucune donnée réelle) : la mAP50 de 0,995 porte sur des formes synthétiques et ne préjuge pas de la précision réelle |
+| GPU, service Windows, WPF, workflows GitHub (dont `vision-training.yml`) | ⚠️ non exécutés ici (Linux, CPU, pas de GitHub Actions) |
+
+Défauts trouvés et corrigés : le script d'installation créait un `vision.json` qui aurait bloqué les réglages du
+back-office ; un site désactivé n'aurait jamais été réactivé (le déploiement dépendait de l'activation) ; seuils
+affichés avec 4 décimales ; stockage de fichiers partagé entre tests (rendu propre à chaque instance).
+
+### Décisions prises
+Voir `docs/assumptions.md` A82–A95. Points saillants à valider :
+- **Licence Ultralytics (AGPL-3.0)** : licence Enterprise nécessaire pour un usage commercial fermé, ou autre
+  détecteur au même format ONNX — **décision juridique/achats avant la production**.
+- Déploiement **tiré par les caisses** (5 min), jamais poussé ; publication manuelle par un administrateur.
+- Le mode hybride est recommandé pour démarrer un site : Gemini ne sert que lorsque YOLO hésite.
+- Seuils suggérés (97 % de justes pour l'ajout automatique) : jamais appliqués automatiquement.
+
+### Reste à faire / points ouverts
+- Premier entraînement sur les données du site pilote (après quelques semaines en Gemini/hybride), sur GPU.
+- Stockage d'entraînement central (conteneur, droits, durée de conservation) à provisionner.
+- Phase 6 : durcissement, installeurs, supervision, runbook complet, tests de charge, checklist pilote.
+
+## Phase 6 — Production (à venir)

@@ -37,6 +37,12 @@ Aucune donnée sensible (santé, religion, etc.). Les choix de plats ne sont pas
   (Gemini API) à chaque reconnaissance → transfert hors du Maroc à mentionner dans la déclaration CNDP et à encadrer
   contractuellement (conditions de traitement des données de l'offre payante, sans utilisation pour l'entraînement
   de Google ; vérifier la durée de rétention applicable). Le provider YOLO local (phase 5) supprime tout transfert.
+- **Provider YOLO (phase 5)** : reconnaissance entièrement locale, aucune image ne quitte le poste. En mode hybride,
+  seules les images où YOLO hésite (ou contenant un nouvel article) partent chez Google : le volume transféré baisse
+  à mesure que le modèle progresse.
+- **Entraînement** : les images envoyées vers le stockage d'entraînement (optionnel) sont des plateaux recadrés, sans
+  visage (refus en amont), sans lien avec le convive ; accès restreint à l'équipe d'entraînement ; durée de
+  conservation à fixer (proposition : 24 mois glissants).
 - Clé Gemini chiffrée par DPAPI sur le poste (jamais en clair dans un fichier ou la configuration).
 - Statistiques remontées au serveur : codes articles proposés/validés, confiances, latences — aucune image.
 

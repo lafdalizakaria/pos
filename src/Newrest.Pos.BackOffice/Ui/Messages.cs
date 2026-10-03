@@ -30,6 +30,15 @@ public static class Messages
         ["invalid_validity"] = "Période de validité incohérente.",
         ["invalid_subsidy"] = "Règle de subvention invalide.",
         ["invalid_vat_rate"] = "Taux de TVA invalide (fraction entre 0 et 1, ex. 0,10).",
+        ["checksum_mismatch"] = "Le fichier du modèle ne correspond pas à son manifeste (taille ou empreinte SHA-256).",
+        ["invalid_manifest"] = "manifest.json invalide : utiliser celui produit par l'entraînement.",
+        ["invalid_model"] = "Modèle invalide (classes, taille d'entrée ou empreinte).",
+        ["invalid_version"] = "Version : 1 à 32 lettres, chiffres, « . », « _ » ou « - ».",
+        ["model_retired"] = "Un modèle retiré ne peut pas être republié : importer une nouvelle version.",
+        ["model_in_use"] = "Ce modèle est utilisé par un site : choisir d'abord un autre modèle.",
+        ["no_published_model"] = "Aucun modèle publié : publier un modèle avant de choisir YOLO ou hybride.",
+        ["model_not_published"] = "Seul un modèle publié peut être déployé.",
+        ["invalid_thresholds"] = "Seuils invalides : 0 ≤ seuil bas ≤ seuil haut ≤ 1.",
     };
 
     public static string For(Exception exception) => exception switch

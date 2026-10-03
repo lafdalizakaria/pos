@@ -82,6 +82,7 @@ backOffice.MapMenuEndpoints();
 backOffice.MapClientEndpoints();
 backOffice.MapAccountEndpoints();
 backOffice.MapSalesEndpoints();
+backOffice.MapVisionEndpoints();
 
 await app.RunAsync();
 

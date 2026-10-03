@@ -20,6 +20,10 @@ public sealed partial class ConnectivityState : ObservableObject
     [ObservableProperty]
     private DateTimeOffset? _lastSyncAt;
 
+    /// <summary>Provider and model applied by the local vision service (status bar).</summary>
+    [ObservableProperty]
+    private string? _visionLabel;
+
     public string Label => BlockingError is not null
         ? $"Synchronisation bloquée : {BlockingError}"
         : (IsOnline ? "En ligne" : "Hors ligne") + (PendingCount > 0 ? $" — {PendingCount} en attente" : string.Empty);

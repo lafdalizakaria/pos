@@ -48,6 +48,9 @@ public sealed class PosDbContext(DbContextOptions<PosDbContext> options) : DbCon
     public DbSet<ZReportLine> ZReportLines => Set<ZReportLine>();
 
     public DbSet<RecognitionLog> RecognitionLogs => Set<RecognitionLog>();
+    public DbSet<VisionModel> VisionModels => Set<VisionModel>();
+    public DbSet<SiteVisionSettings> SiteVisionSettings => Set<SiteVisionSettings>();
+    public DbSet<RegisterVisionStatus> RegisterVisionStatuses => Set<RegisterVisionStatus>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)

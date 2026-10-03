@@ -39,6 +39,18 @@ public static class RegisterSyncEndpoints
         g.MapGet("/photos/{photoId:guid}", async (Guid photoId, CatalogService s, CancellationToken ct) =>
                 await s.OpenPhotoForRegisterAsync(photoId, ct) is { } photo ? Results.Stream(photo.Content, photo.ContentType) : Results.NotFound())
             .WithSummary("Reference photo of an article, sent by the register to its vision service.");
+        g.MapGet("/vision", (ClaimsPrincipal user, VisionModelService s, CancellationToken ct) => s.GetRegisterConfigAsync(RegisterId(user), ct))
+            .WithSummary("Vision settings of the register's site (provider, thresholds, model to install).");
+        g.MapGet("/vision-models/{id:guid}/file", async (Guid id, ClaimsPrincipal user, VisionModelService s, CancellationToken ct) =>
+                await s.OpenModelForRegisterAsync(RegisterId(user), id, ct) is { } stream
+                    ? Results.Stream(stream, "application/octet-stream", enableRangeProcessing: true)
+                    : Results.NotFound())
+            .WithSummary("ONNX file of a published model (the register checks its SHA-256 before installing it).");
+        g.MapPost("/vision/status", async (RegisterVisionReportDto dto, ClaimsPrincipal user, VisionModelService s, CancellationToken ct) =>
+        {
+            await s.ReportRegisterStatusAsync(RegisterId(user), dto, ct);
+            return Results.NoContent();
+        });
         return api;
     }
 

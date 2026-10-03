@@ -21,7 +21,10 @@
     </Border>
     <!-- Permanent status: online / offline / items waiting to be sent. -->
     <Border DockPanel.Dock="Bottom" Padding="12,6" Background="{Binding Status.IsOnline, Converter={StaticResource OnlineBrush}}">
-      <TextBlock Foreground="White" FontWeight="SemiBold" Text="{Binding Status.Label}" />
+      <DockPanel>
+        <TextBlock DockPanel.Dock="Right" Foreground="White" Text="{Binding Status.VisionLabel}" />
+        <TextBlock Foreground="White" FontWeight="SemiBold" Text="{Binding Status.Label}" />
+      </DockPanel>
     </Border>
     <ContentControl Content="{Binding CurrentPage}" Margin="12" />
   </DockPanel>

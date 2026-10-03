@@ -89,3 +89,15 @@ public sealed record RecognitionLineDto(string ArticleCode, int Quantity, string
 public sealed record RecognitionSyncDto(
     Guid Id, Guid? TicketId, string? DatasetId, DateTimeOffset CapturedAt, string Provider, int LatencyMs, bool TimedOut,
     IReadOnlyList<RecognitionPredictionDto> Predictions, IReadOnlyList<RecognitionLineDto> Lines);
+
+// ----- Vision deployment (server ↔ register) --------------------------------------------------------------------------
+
+/// <summary>Model the register must install in its vision service (manifest forwarded unchanged).</summary>
+public sealed record VisionModelPackageDto(Guid Id, string Version, string Sha256, long SizeBytes, string ManifestJson);
+
+/// <param name="Configured">False: no settings for the site, the register keeps its local configuration.</param>
+public sealed record RegisterVisionConfigDto(bool Configured, bool Enabled, string Provider, decimal LowThreshold, decimal HighThreshold,
+    decimal HybridMinConfidence, VisionModelPackageDto? Model);
+
+/// <summary>What the register applied (or why it could not).</summary>
+public sealed record RegisterVisionReportDto(string? Provider, string? ModelVersion, bool ServiceReachable, bool ProviderReady, string? Error);

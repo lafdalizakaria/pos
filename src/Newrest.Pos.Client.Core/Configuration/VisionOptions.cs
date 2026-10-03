@@ -21,4 +21,7 @@ public sealed class VisionOptions
     public bool SendReferencePhotos { get; set; } = true;
 
     public int MaxReferencePhotosPerArticle { get; set; } = 2;
+
+    /// <summary>Applies the site's settings from the back-office (provider, model, thresholds) at each synchronisation.</summary>
+    public bool ApplySiteSettings { get; set; } = true;
 }

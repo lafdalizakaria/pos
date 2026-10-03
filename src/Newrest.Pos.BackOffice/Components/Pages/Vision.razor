@@ -15,6 +15,9 @@
             @foreach (var s in _sites) { <option value="@s.Id">@s.Name</option> }
         </select>
     </label>
+    <label>Moteur / modèle
+        <input placeholder="ex. gemini, yolo:20261003" @bind="_provider" />
+    </label>
     <button disabled="@Busy" @onclick="RefreshAsync">Afficher</button>
 </div>
 
@@ -43,6 +46,40 @@
             </tbody>
         </table>
     </section>
+
+    @if (st.Calibration is { } cal)
+    {
+        <section class="card">
+            <h2>Calibration des seuils</h2>
+            <p class="hint">Part des propositions gardées par les caissières (ajout automatique ou confirmé) selon la confiance annoncée par le
+                moteur, sur @cal.Predictions prédiction(s) de plateaux encaissés. Filtrer sur un moteur ou un modèle (champ ci-dessus) : chaque
+                moteur a sa propre échelle de confiance.</p>
+            <p>
+                @if (cal.SuggestedHigh is { } high)
+                {
+                    <strong>Seuil haut suggéré : @high.ToString("0.00", System.Globalization.CultureInfo.GetCultureInfo("fr-FR"))</strong>
+                    <span> (précision @Messages.Percent(cal.PrecisionAtHigh ?? 0) au-dessus)</span>
+                    @if (cal.SuggestedLow is { } low)
+                    {
+                        <span> — <strong>seuil bas suggéré : @low.ToString("0.00", System.Globalization.CultureInfo.GetCultureInfo("fr-FR"))</strong>
+                            (propositions justes à @Messages.Percent(cal.PrecisionAtLow ?? 0))</span>
+                    }
+                    <span class="muted"> — à reporter dans <a href="vision/modeles">Modèles vision</a>.</span>
+                }
+                else { <span class="muted">Pas assez de données pour suggérer des seuils (30 prédictions au moins au-dessus du seuil).</span> }
+            </p>
+            <table>
+                <thead><tr><th>Confiance</th><th class="num">Prédictions</th><th class="num">Gardées</th><th class="num">Précision</th></tr></thead>
+                <tbody>
+                    @foreach (var b in cal.Buckets.Where(b => b.Count > 0).Reverse())
+                    {
+                        <tr><td>@Messages.Percent(b.From) – @Messages.Percent(b.To)</td><td class="num">@b.Count</td><td class="num">@b.Correct</td>
+                            <td class="num">@Messages.Percent(b.Precision)</td></tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    }
 
     <section class="card">
         <h2>Par article</h2>
@@ -80,6 +117,7 @@
     private DateOnly _from;
     private DateOnly _to;
     private Guid? _siteId;
+    private string? _provider;
 
     protected override async Task LoadAsync()
     {
@@ -90,7 +128,7 @@
     }
 
     private async Task RefreshAsync() =>
-        _stats = await Run<RecognitionService, VisionStatsDto>(s => s.GetStatsAsync(_from, _to, _siteId));
+        _stats = await Run<RecognitionService, VisionStatsDto>(s => s.GetStatsAsync(_from, _to, _siteId, default, string.IsNullOrWhiteSpace(_provider) ? null : _provider.Trim()));
 
     private static IEnumerable<(VisionKpiDto Kpi, string Group)> Rows(VisionStatsDto stats) =>
         [(stats.Total, "total"), .. stats.BySite.Select(s => (s, "site")), .. stats.ByProvider.Select(p => (p, "provider"))];

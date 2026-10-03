@@ -23,6 +23,12 @@ public sealed record VisionFeedbackLine(string ArticleCode, int Quantity, string
 
 public sealed record VisionFeedback(string RecognitionId, string? TicketId, IReadOnlyList<VisionFeedbackLine> Lines);
 
+/// <summary>State of the local service (<c>GET /health</c>, also returned by <c>PUT /runtime</c>).</summary>
+public sealed record VisionHealth(string Status, string Provider, bool ProviderReady, string? Detail, string? ModelVersion,
+    IReadOnlyList<string>? ModelsInstalled, bool LocalOverride);
+
+public sealed record VisionRuntimeRequest(string Provider, string? ModelVersion, decimal? HybridMinConfidence);
+
 /// <summary>The vision service did not answer usefully (timeout, not running, error): the cashier continues by hand.</summary>
 public sealed class VisionUnavailableException(string message, Exception? inner = null) : Exception(message, inner);
 
@@ -34,6 +40,14 @@ public interface IVisionClient
 
     /// <summary>Best effort: false when the service is unreachable (the server keeps its own copy of the outcome).</summary>
     Task<bool> SendFeedbackAsync(VisionFeedback feedback, CancellationToken ct);
+
+    Task<VisionHealth> GetHealthAsync(CancellationToken ct);
+
+    /// <summary>Installs a model (the service checks the SHA-256 against the manifest and loads it before accepting it).</summary>
+    Task InstallModelAsync(string version, Stream model, string manifestJson, CancellationToken ct);
+
+    /// <summary>Switches provider/model (site settings from the back-office).</summary>
+    Task<VisionHealth> SetRuntimeAsync(VisionRuntimeRequest request, CancellationToken ct);
 }
 
 /// <summary>HTTP client of the local vision service.</summary>
@@ -98,6 +112,68 @@ public sealed class VisionClient(HttpClient http, VisionOptions options) : IVisi
         {
             return false;
         }
+    }
+
+    public async Task<VisionHealth> GetHealthAsync(CancellationToken ct) =>
+        await SendAsync(() => http.GetAsync(new Uri(options.BaseUrl, "health"), ct), ct);
+
+    public async Task InstallModelAsync(string version, Stream model, string manifestJson, CancellationToken ct)
+    {
+        using var content = new MultipartFormDataContent();
+        var file = new StreamContent(model);
+        file.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+        content.Add(file, "model", "model.onnx");
+        content.Add(new StringContent(manifestJson), "manifest");
+        try
+        {
+            using var response = await http.PutAsync(new Uri(options.BaseUrl, $"models/{Uri.EscapeDataString(version)}"), content, ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new VisionUnavailableException($"Installation du modèle {version} refusée : {await ErrorCodeAsync(response, ct)}.");
+            }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
+        {
+            throw new VisionUnavailableException("Service de reconnaissance injoignable.", ex);
+        }
+    }
+
+    public async Task<VisionHealth> SetRuntimeAsync(VisionRuntimeRequest request, CancellationToken ct) =>
+        await SendAsync(() => http.PutAsJsonAsync(new Uri(options.BaseUrl, "runtime"), request, Json, ct), ct);
+
+    private static async Task<VisionHealth> SendAsync(Func<Task<HttpResponseMessage>> send, CancellationToken ct)
+    {
+        try
+        {
+            using var response = await send();
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new VisionUnavailableException($"Service de reconnaissance : {await ErrorCodeAsync(response, ct)}.");
+            }
+
+            return await response.Content.ReadFromJsonAsync<VisionHealth>(Json, ct) ?? throw new VisionUnavailableException("Réponse vide.");
+        }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException or TaskCanceledException && !ct.IsCancellationRequested)
+        {
+            throw new VisionUnavailableException("Service de reconnaissance injoignable.", ex);
+        }
+    }
+
+    private static async Task<string> ErrorCodeAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        try
+        {
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>(Json, ct);
+            if (body.TryGetProperty("detail", out var detail) && detail.ValueKind == JsonValueKind.Object && detail.TryGetProperty("code", out var code))
+            {
+                return code.GetString() ?? $"HTTP {(int)response.StatusCode}";
+            }
+        }
+        catch (JsonException)
+        {
+        }
+
+        return $"HTTP {(int)response.StatusCode}";
     }
 
     private static async Task<string> DescribeAsync(HttpResponseMessage response, CancellationToken ct)

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Net;
+using System.Net.Http.Json;
 using System.Net.Sockets;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
@@ -54,6 +55,9 @@ public sealed class RealVisionService : IAsyncDisposable
         info.Environment["VISION_MOCK_LATENCY_MS"] = "50";
         info.Environment["VISION_DATASET_DIR"] = dataset;
         info.Environment["VISION_CAMERA_INDEX"] = "99";
+        info.Environment["VISION_MODELS_DIR"] = Path.Combine(dataset, "models");
+        info.Environment["VISION_RUNTIME_FILE"] = Path.Combine(dataset, "runtime.json");
+        info.Environment["VISION_CONFIG_FILE"] = "";
         var process = Process.Start(info)!;
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
@@ -89,6 +93,20 @@ public sealed class RealVisionService : IAsyncDisposable
         { WorkingDirectory = VisionFolder! })!;
         p.WaitForExit();
         return path;
+    }
+
+    /// <summary>A small ONNX model with the YOLO output layout and a fixed answer (vision/tests/onnx_models.py).</summary>
+    public static byte[] MakeYoloLikeModel(string folder)
+    {
+        Directory.CreateDirectory(folder);
+        var path = Path.Combine(folder, "model.onnx");
+        using var p = Process.Start(new ProcessStartInfo(Python!, ["-c",
+            "import sys; from tests.onnx_models import yolo_like_model; "
+            + "open(sys.argv[1], 'wb').write(yolo_like_model(['CSC-VND', 'EAU-50'], "
+            + "[(100, 120, 90, 80, {'CSC-VND': 0.96, 'EAU-50': 0.02}), (230, 200, 60, 70, {'EAU-50': 0.94})], 320))", path])
+        { WorkingDirectory = VisionFolder! })!;
+        p.WaitForExit();
+        return File.ReadAllBytes(path);
     }
 
     public async ValueTask DisposeAsync()
@@ -187,5 +205,54 @@ public sealed class RealVisionServiceScenario(SqlServerFixture fixture) : IAsync
         await screen2.LoadAsync();
         await screen2.CaptureTrayCommand.ExecuteAsync(null);
         screen2.Error.Should().Be("Caméra indisponible. Saisir le plateau.");
+    }
+
+    [VisionServiceFact]
+    public async Task Model_published_in_the_back_office_is_deployed_to_the_real_service_and_used_for_the_sale()
+    {
+        await using var service = await RealVisionService.StartAsync();
+        var images = Path.Combine(service.Dataset, "camera");
+        RealVisionService.MakeTrayImage(images);
+        var admin = _api.Admin();
+        await VisionDeploymentScenarios.PublishModelAsync(admin, "20261003-1500", RealVisionService.MakeYoloLikeModel(Path.Combine(service.Dataset, "pkg")));
+        await VisionDeploymentScenarios.ConfigureSiteAsync(admin, DemoDataSeeder.Id("site:CAS-SM"),
+            new Contracts.V1.SiteVisionSettingsUpdate(true, "Yolo", null, 0.6m, 0.9m, 0.6m));
+
+        var options = new RegisterOptions { Vision = { BaseUrl = service.Url } };
+        await using var register = await RegisterHarness.CreateAsync(_api, DemoDataSeeder.Id("register:CAS1"), options,
+            configure: s => s.AddSingleton<ICamera>(new SimulatedCamera(images)));
+        await register.LoginAndOpenAsync();
+        var sync = register.Get<Client.Core.Sync.SyncService>();
+        await sync.RunOnceAsync(forceReference: true);
+        await sync.VisionDeployment;
+        register.Get<Client.Core.Local.ConnectivityState>().VisionLabel.Should().Be("Vision : yolo 20261003-1500");
+        using (var http = new HttpClient())
+        {
+            var health = await http.GetFromJsonAsync<JsonElement>(new Uri(service.Url, "health"));
+            health.GetProperty("provider").GetString().Should().Be("yolo");
+            health.GetProperty("provider_ready").GetBoolean().Should().BeTrue();
+        }
+
+        var screen = register.Get<SaleViewModel>();
+        await screen.LoadAsync();
+        await screen.CaptureTrayCommand.ExecuteAsync(null);
+        screen.Error.Should().BeNull();
+        screen.Cart.Lines.Select(l => (l.Code, l.Source.ToString())).Should().Equal(("CSC-VND", "VisionAuto"), ("EAU-50", "VisionAuto"));
+        screen.Tendered = 100m;
+        await screen.PayCashCommand.ExecuteAsync(null);
+        screen.Message.Should().StartWith("Ticket CAS1-00000001");
+        await screen.LastOutcome;
+
+        for (var i = 0; i < 20 && await register.Get<Client.Core.Local.LocalStore>().CountPendingAsync() > 0; i++)
+        {
+            await sync.RunOnceAsync();
+        }
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var stats = await admin.GetFromJsonAsync<Contracts.V1.VisionStatsDto>($"/api/v1/vision/stats?from={today:yyyy-MM-dd}&to={today:yyyy-MM-dd}");
+        stats!.ByProvider.Should().ContainSingle().Which.Label.Should().Be("yolo:20261003-1500");
+        var status = (await admin.GetFromJsonAsync<List<Contracts.V1.RegisterVisionStatusDto>>("/api/v1/vision/registers"))!
+            .Single(r => r.RegisterPrefix == "CAS1");
+        status.UpToDate.Should().BeTrue();
     }
 }

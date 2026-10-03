@@ -30,6 +30,7 @@ public static class DependencyInjection
         services.AddScoped<RegisterSyncService>();
         services.AddScoped<TicketQueryService>();
         services.AddScoped<Vision.RecognitionService>();
+        services.AddScoped<Vision.VisionModelService>();
         return services;
     }
 }
