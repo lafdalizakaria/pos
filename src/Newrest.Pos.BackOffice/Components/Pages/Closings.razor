@@ -1,0 +1,87 @@
+@page "/clotures"
+@inherits PageBase
+
+<PageTitle>Clôtures Z & intégrité - Newrest POS</PageTitle>
+<h1>Clôtures Z &amp; intégrité</h1>
+<Notice Error="@Error" Success="@Success" />
+
+<section class="card">
+    <h2>Vérification de la chaîne d'intégrité</h2>
+    <p class="hint">Recalcule l'empreinte SHA-256 de chaque ticket de la caisse et vérifie la continuité de la numérotation et du chaînage :
+        toute modification, suppression ou insertion de ticket est détectée.</p>
+    <table>
+        <thead><tr><th>Caisse</th><th>Dernier ticket reçu</th><th>Dernier Z</th><th>Dernier contact</th><th>Résultat</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var r in _registers)
+            {
+                var check = _checks.GetValueOrDefault(r.Id);
+                <tr>
+                    <td><code>@r.TicketPrefix</code> @r.Name</td>
+                    <td>@r.LastSyncedTicketSequence</td>
+                    <td>@(_reports.Where(z => z.RegisterId == r.Id).Select(z => (int?)z.ZNumber).Max()?.ToString() ?? "—")</td>
+                    <td>@(r.LastSeenAt is { } seen ? Messages.DateTime(seen) : "jamais")</td>
+                    <td>
+                        @if (check is null) { <span class="muted">non vérifiée</span> }
+                        else if (check.IsValid) { <span class="ok">✔ @check.TicketsChecked ticket(s) intègres</span> }
+                        else
+                        {
+                            <span class="negative">✘ @check.Issues.Count anomalie(s)</span>
+                            <ul>@foreach (var i in check.Issues.Take(20)) { <li>n° @i.Sequence : @IssueLabel(i.Kind)</li> }</ul>
+                        }
+                    </td>
+                    <td class="actions"><button class="link" disabled="@Busy" @onclick="() => VerifyAsync(r)">Vérifier</button></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</section>
+
+<section class="card">
+    <h2>Clôtures Z</h2>
+    <table>
+        <thead><tr><th>Caisse</th><th>Z</th><th>Journée</th><th>Tickets</th><th class="num">CA net TTC</th><th class="num">TVA</th><th class="num">Subventions</th>
+            <th class="num">Recharges</th><th class="num">Espèces attendues</th><th class="num">Comptées</th><th class="num">Écart</th></tr></thead>
+        <tbody>
+            @foreach (var z in _reports)
+            {
+                <tr>
+                    <td><code>@z.RegisterPrefix</code></td><td>@z.ZNumber</td><td>@Messages.Date(z.BusinessDate)</td>
+                    <td>@(z.FirstTicketSequence is null ? "—" : $"{z.FirstTicketSequence}–{z.LastTicketSequence}") (@z.SaleCount v., @z.CreditNoteCount a.)</td>
+                    <td class="num">@Messages.Mad(z.NetSales)</td><td class="num">@Messages.Mad(z.TotalVat)</td><td class="num">@Messages.Mad(z.SubsidyTotal)</td>
+                    <td class="num">@Messages.Mad(z.AccountTopUpTotal)</td><td class="num">@Messages.Mad(z.ExpectedCash)</td><td class="num">@Messages.Mad(z.CountedCash)</td>
+                    <td class="num @(z.CashDifference != 0 ? "negative" : null)">@Messages.Mad(z.CashDifference)</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</section>
+
+@code {
+    private IReadOnlyList<RegisterDto> _registers = [];
+    private IReadOnlyList<ZReportDto> _reports = [];
+    private readonly Dictionary<Guid, ChainVerificationDto> _checks = [];
+
+    protected override async Task LoadAsync()
+    {
+        _registers = await Run<OrganizationService, IReadOnlyList<RegisterDto>>(s => s.ListRegistersAsync()) ?? [];
+        _reports = await Run<TicketQueryService, IReadOnlyList<ZReportDto>>(s => s.ListZReportsAsync(null, null, null, null)) ?? [];
+    }
+
+    private async Task VerifyAsync(RegisterDto register)
+    {
+        if (await Run<TicketQueryService, ChainVerificationDto>(s => s.VerifyChainAsync(register.Id)) is { } result)
+        {
+            _checks[register.Id] = result;
+        }
+    }
+
+    private static string IssueLabel(string kind) => kind switch
+    {
+        "Gap" => "ticket manquant",
+        "Duplicate" => "numéro en double",
+        "BrokenLink" => "chaînage rompu",
+        "HashMismatch" => "contenu modifié",
+        "ForeignRegister" => "ticket d'une autre caisse",
+        _ => kind,
+    };
+}

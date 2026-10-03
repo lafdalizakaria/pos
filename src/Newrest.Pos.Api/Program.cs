@@ -72,6 +72,7 @@ var v1 = app.MapGroup(ApiVersion.BasePath);
 v1.MapGet("/ping", (TimeProvider clock) => Results.Ok(new { status = "ok", serverTime = clock.GetUtcNow() }))
     .WithName("Ping").AllowAnonymous();
 v1.MapAuthEndpoints();
+v1.MapRegisterSyncEndpoints();
 
 // Every management endpoint requires a back-office role; scopes and fine-grained roles are enforced by the use cases.
 var backOffice = v1.MapGroup(string.Empty).RequireAuthorization(AuthenticationSetup.BackOfficePolicy);
@@ -80,6 +81,7 @@ backOffice.MapCatalogEndpoints();
 backOffice.MapMenuEndpoints();
 backOffice.MapClientEndpoints();
 backOffice.MapAccountEndpoints();
+backOffice.MapSalesEndpoints();
 
 await app.RunAsync();
 

@@ -85,6 +85,15 @@ public sealed class ZReportLine : Entity, IImmutableRecord
     public decimal? TaxAmount { get; private set; }
 }
 
+/// <summary>Money collected at the register outside tickets: account top-ups (+) and balance payouts (−), by method.</summary>
+public sealed record RegisterCollection(PaymentMethod Method, decimal Amount)
+{
+    /// <summary>Collections of a register from its ledger movements (those carrying a payment method other than Account).</summary>
+    public static IReadOnlyList<RegisterCollection> FromMovements(IEnumerable<AccountMovement> movements, Guid registerId) =>
+        [.. movements.Where(m => m.RegisterId == registerId && m.PaymentMethod is { } method && method != PaymentMethod.Account)
+            .Select(m => new RegisterCollection(m.PaymentMethod!.Value, m.Amount))];
+}
+
 public sealed record ZReportRequest(
     Guid Id,
     CashSession Session,
@@ -92,13 +101,13 @@ public sealed record ZReportRequest(
     DateTimeOffset GeneratedAt,
     decimal CountedCash,
     IReadOnlyCollection<Ticket> Tickets,
-    IReadOnlyCollection<AccountMovement> RegisterAccountMovements);
+    IReadOnlyCollection<RegisterCollection> Collections);
 
 public static class ZReportCalculator
 {
     /// <summary>
-    /// Builds the Z report of a session from its tickets and the account movements collected at the register
-    /// (top-ups and payouts carrying a <see cref="AccountMovement.PaymentMethod"/>). Top-ups are not sales:
+    /// Builds the Z report of a session from its tickets and the money collected at the register for accounts
+    /// (top-ups and payouts, see <see cref="RegisterCollection"/>). Top-ups are not sales:
     /// they appear in their own section and in expected cash, never in sales or VAT.
     /// </summary>
     public static ZReport Compute(ZReportRequest request)
@@ -111,9 +120,7 @@ public static class ZReportCalculator
             throw new DomainException("z_foreign_ticket", "Every ticket must belong to the closed session.");
         }
 
-        var collected = request.RegisterAccountMovements
-            .Where(m => m.RegisterId == session.RegisterId && m.PaymentMethod is not null && m.PaymentMethod != PaymentMethod.Account)
-            .ToList();
+        var collected = request.Collections.Where(c => c.Method != PaymentMethod.Account).ToList();
 
         var report = new ZReport(request.Id)
         {
@@ -152,13 +159,13 @@ public static class ZReportCalculator
                 group.Count(), ttc, ttc - vat, vat);
         }
 
-        foreach (var group in collected.GroupBy(m => m.PaymentMethod!.Value).OrderBy(g => g.Key))
+        foreach (var group in collected.GroupBy(m => m.Method).OrderBy(g => g.Key))
         {
             report.AddLine(ZSection.AccountTopUp, group.Key.ToString(), group.Count(), group.Sum(m => m.Amount));
         }
 
         var cashFromTickets = tickets.SelectMany(t => t.Payments).Where(p => p.Method == PaymentMethod.Cash).Sum(p => p.Amount);
-        var cashFromAccounts = collected.Where(m => m.PaymentMethod == PaymentMethod.Cash).Sum(m => m.Amount);
+        var cashFromAccounts = collected.Where(m => m.Method == PaymentMethod.Cash).Sum(m => m.Amount);
         report.ExpectedCash = session.OpeningFloat + cashFromTickets + cashFromAccounts;
         report.CashDifference = report.CountedCash - report.ExpectedCash;
         return report;

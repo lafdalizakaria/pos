@@ -84,16 +84,29 @@ public sealed class Contract : ReferenceEntity
 
     public bool AcceptsPointOfSale(Guid pointOfSaleId) => _pointsOfSale.Any(p => p.PointOfSaleId == pointOfSaleId);
 
+    /// <summary>
+    /// Incremented when the accepted points of sale change, so that the contract row (and its rowversion) changes
+    /// and registers receive the new list through incremental sync.
+    /// </summary>
+    public int Revision { get; private set; }
+
     public void AcceptPointOfSale(Guid pointOfSaleId)
     {
         Guard.NotEmpty(pointOfSaleId, nameof(pointOfSaleId));
         if (!AcceptsPointOfSale(pointOfSaleId))
         {
             _pointsOfSale.Add(new ContractPointOfSale(Id, pointOfSaleId));
+            Revision++;
         }
     }
 
-    public void RemovePointOfSale(Guid pointOfSaleId) => _pointsOfSale.RemoveAll(p => p.PointOfSaleId == pointOfSaleId);
+    public void RemovePointOfSale(Guid pointOfSaleId)
+    {
+        if (_pointsOfSale.RemoveAll(p => p.PointOfSaleId == pointOfSaleId) > 0)
+        {
+            Revision++;
+        }
+    }
 
     public SubsidyRule AddSubsidyRule(SubsidyRule rule)
     {

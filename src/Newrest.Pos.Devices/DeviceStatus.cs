@@ -1,9 +1,6 @@
 namespace Newrest.Pos.Devices;
 
-/// <summary>
-/// Peripheral abstractions (printer, customer display, badge reader, camera, payment terminal, cash drawer)
-/// and their simulators are delivered in phase 3. Every device reports this status to the register UI.
-/// </summary>
+/// <summary>State reported by every peripheral to the register status bar.</summary>
 public enum DeviceStatus
 {
     Unknown,
@@ -11,4 +8,11 @@ public enum DeviceStatus
     Busy,
     Offline,
     Error,
+}
+
+public interface IDevice
+{
+    string Name { get; }
+
+    DeviceStatus Status { get; }
 }

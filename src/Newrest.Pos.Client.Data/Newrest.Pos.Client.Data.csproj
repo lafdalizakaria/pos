@@ -4,9 +4,9 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="../Newrest.Pos.Domain/Newrest.Pos.Domain.csproj" />
     <ProjectReference Include="../Newrest.Pos.Contracts/Newrest.Pos.Contracts.csproj" />
   </ItemGroup>
 </Project>

@@ -5,7 +5,9 @@ using Newrest.Pos.Application.Catalog;
 using Newrest.Pos.Application.Clients;
 using Newrest.Pos.Application.Menus;
 using Newrest.Pos.Application.Organization;
+using Newrest.Pos.Application.Sales;
 using Newrest.Pos.Application.Security;
+using Newrest.Pos.Application.Sync;
 
 namespace Newrest.Pos.Application;
 
@@ -24,6 +26,9 @@ public static class DependencyInjection
         services.AddScoped<DinerService>();
         services.AddScoped<AccountService>();
         services.AddScoped<AuditQueryService>();
+        services.AddScoped<RegisterReferenceService>();
+        services.AddScoped<RegisterSyncService>();
+        services.AddScoped<TicketQueryService>();
         return services;
     }
 }

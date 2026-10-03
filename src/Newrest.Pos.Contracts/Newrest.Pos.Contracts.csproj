@@ -2,4 +2,8 @@
   <PropertyGroup>
     <RootNamespace>Newrest.Pos.Contracts</RootNamespace>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- Needed only by the sync mapping: registers and server rebuild fiscal tickets with the same domain code. -->
+    <ProjectReference Include="../Newrest.Pos.Domain/Newrest.Pos.Domain.csproj" />
+  </ItemGroup>
 </Project>

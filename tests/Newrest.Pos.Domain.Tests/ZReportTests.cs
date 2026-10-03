@@ -41,7 +41,7 @@ public class ZReportTests
         { RegisterId = Guid.CreateVersion7(), PaymentMethod = PaymentMethod.Cash });
 
         var z = ZReportCalculator.Compute(new ZReportRequest(Guid.CreateVersion7(), session, 7, TestData.Now.AddHours(3), 598m,
-            [t1, t2, credit], [topUpCash, topUpCard, consumption, otherRegister]));
+            [t1, t2, credit], RegisterCollection.FromMovements([topUpCash, topUpCard, consumption, otherRegister], TestData.RegisterId)));
 
         z.ZNumber.Should().Be(7);
         z.SaleCount.Should().Be(2);

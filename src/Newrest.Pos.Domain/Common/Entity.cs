@@ -31,7 +31,7 @@ public abstract class ReferenceEntity : Entity
 
     public DateTimeOffset UpdatedAt { get; set; }
 
-    public byte[] RowVersion { get; set; } = [];
+    public ulong RowVersion { get; set; }
 }
 
 /// <summary>

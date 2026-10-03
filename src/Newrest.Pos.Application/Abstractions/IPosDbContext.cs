@@ -32,7 +32,15 @@ public interface IPosDbContext
     DbSet<Account> Accounts { get; }
     DbSet<AccountMovement> AccountMovements { get; }
     DbSet<Ticket> Tickets { get; }
+    DbSet<CashSession> CashSessions { get; }
+    DbSet<ZReport> ZReports { get; }
     DbSet<AuditLog> AuditLogs { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+}
+
+/// <summary>Upper bound for incremental sync: rows with a rowversion below it are committed (SQL Server MIN_ACTIVE_ROWVERSION).</summary>
+public interface IRowVersionSource
+{
+    Task<ulong> GetMinActiveRowVersionAsync(CancellationToken cancellationToken = default);
 }

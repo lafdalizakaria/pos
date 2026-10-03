@@ -1,0 +1,132 @@
+@page "/tickets"
+@inherits PageBase
+
+<PageTitle>Tickets - Newrest POS</PageTitle>
+<h1>Tickets &amp; avoirs</h1>
+<Notice Error="@Error" />
+
+<div class="toolbar">
+    <label>Point de vente
+        <select @bind="PointOfSaleId" @bind:after="LoadRegistersAsync">
+            <option value="">Tous</option>
+            @foreach (var p in _pointsOfSale) { <option value="@p.Id">@p.Name</option> }
+        </select>
+    </label>
+    <label>Caisse
+        <select @bind="RegisterId" @bind:after="() => GoToAsync(1)">
+            <option value="">Toutes</option>
+            @foreach (var r in _registers) { <option value="@r.Id">@r.TicketPrefix — @r.Name</option> }
+        </select>
+    </label>
+    <label>Du<input type="date" @bind="_from" @bind:after="() => GoToAsync(1)" /></label>
+    <label>Au<input type="date" @bind="_to" @bind:after="() => GoToAsync(1)" /></label>
+    <label>Numéro / badge<input @bind="_search" @bind:event="oninput" @bind:after="() => GoToAsync(1)" /></label>
+</div>
+
+<div class="grid-2">
+    <section class="card">
+        <table>
+            <thead><tr><th>Numéro</th><th>Date</th><th>Convive</th><th class="num">Total</th><th class="num">Subvention</th><th class="num">Part convive</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var t in _page.Items)
+                {
+                    <tr class="@(t.Id == _detail?.Summary.Id ? "selected" : null) @(t.IsCredited ? "inactive" : null)">
+                        <td><code>@t.Number</code> @(t.Kind == "CreditNote" ? "(avoir)" : t.IsCredited ? "(annulé)" : "")</td>
+                        <td>@Messages.DateTime(t.IssuedAt)</td>
+                        <td>@(t.DinerName ?? "—")</td>
+                        <td class="num @(t.TotalAmount < 0 ? "negative" : null)">@Messages.Mad(t.TotalAmount)</td>
+                        <td class="num">@Messages.Mad(t.SubsidyAmount)</td>
+                        <td class="num">@Messages.Mad(t.DinerShare)</td>
+                        <td class="actions"><button class="link" @onclick="() => OpenAsync(t.Id)">Détail</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <Pager Page="_pageNumber" PageSize="PageSize" Total="_page.TotalCount" OnChange="GoToAsync" />
+    </section>
+
+    <section class="card">
+        @if (_detail is null)
+        {
+            <p>Sélectionnez un ticket.</p>
+        }
+        else
+        {
+            var s = _detail.Summary;
+            <h2>@(s.Kind == "CreditNote" ? "Avoir" : "Ticket") @s.Number</h2>
+            <p>@Messages.DateTime(s.IssuedAt) — journée du @Messages.Date(s.BusinessDate) — caissier <code>@_detail.OperatorCode</code>
+                @if (s.BadgeNumber is not null) { <span> — badge <code>@s.BadgeNumber</code> (@s.DinerName)</span> }</p>
+            @if (_detail.CreditReason is not null) { <p>Motif de l'avoir : <strong>@_detail.CreditReason</strong></p> }
+            <table>
+                <thead><tr><th>Article</th><th class="num">Qté</th><th class="num">PU TTC</th><th class="num">TVA</th><th class="num">Total</th><th>Saisie</th></tr></thead>
+                <tbody>
+                    @foreach (var l in _detail.Lines)
+                    {
+                        <tr><td><code>@l.ArticleCode</code> @l.Label</td><td class="num">@l.Quantity</td><td class="num">@Messages.Mad(l.UnitPrice)</td>
+                            <td class="num">@Messages.Percent(l.VatRate)</td><td class="num">@Messages.Mad(l.LineTotal)</td><td>@SourceLabel(l.Source)</td></tr>
+                    }
+                </tbody>
+            </table>
+            <p>Total TTC <strong>@Messages.Mad(s.TotalAmount)</strong> dont TVA @Messages.Mad(_detail.TotalVat) — subvention @Messages.Mad(s.SubsidyAmount) — part convive @Messages.Mad(s.DinerShare)</p>
+            <h3>Paiements</h3>
+            <ul>
+                @foreach (var p in _detail.Payments)
+                {
+                    <li>@PaymentLabel(p.Method) : @Messages.Mad(p.Amount) @(p.Change is > 0 ? $"(reçu {Messages.Mad(p.Tendered ?? 0)}, rendu {Messages.Mad(p.Change.Value)})" : "") @(p.AuthorizationCode is { } a ? $"— autorisation {a}" : "")</li>
+                }
+            </ul>
+            <h3>Intégrité</h3>
+            <p class="hint">Séquence @_detail.Sequence — reçu le @Messages.DateTime(_detail.ReceivedAt)<br />
+                Empreinte précédente <code>@_detail.PreviousHash</code><br />Empreinte <code>@_detail.Hash</code></p>
+        }
+    </section>
+</div>
+
+@code {
+    private const int PageSize = 25;
+    private IReadOnlyList<PointOfSaleDto> _pointsOfSale = [];
+    private IReadOnlyList<RegisterDto> _registers = [];
+    private PagedResult<TicketSummaryDto> _page = new([], 0, 1, PageSize);
+    private TicketDetailDto? _detail;
+    private int _pageNumber = 1;
+    private DateOnly? _from = DateOnly.FromDateTime(DateTime.Today).AddDays(-7);
+    private DateOnly? _to;
+    private string? _search;
+
+    private Guid? PointOfSaleId { get; set; }
+
+    private Guid? RegisterId { get; set; }
+
+    protected override async Task LoadAsync()
+    {
+        _pointsOfSale = await Run<OrganizationService, IReadOnlyList<PointOfSaleDto>>(s => s.ListPointsOfSaleAsync()) ?? [];
+        await LoadRegistersAsync();
+    }
+
+    private async Task LoadRegistersAsync()
+    {
+        RegisterId = null;
+        var pos = PointOfSaleId;
+        _registers = await Run<OrganizationService, IReadOnlyList<RegisterDto>>(s => s.ListRegistersAsync(pos)) ?? [];
+        await GoToAsync(1);
+    }
+
+    private async Task GoToAsync(int page)
+    {
+        _pageNumber = page;
+        var (pos, reg, from, to, search) = (PointOfSaleId, RegisterId, _from, _to, _search);
+        _page = await Run<TicketQueryService, PagedResult<TicketSummaryDto>>(s => s.ListAsync(pos, reg, from, to, search, page, PageSize)) ?? _page;
+    }
+
+    private async Task OpenAsync(Guid id) => _detail = await Run<TicketQueryService, TicketDetailDto>(s => s.GetAsync(id));
+
+    private static string SourceLabel(string source) => source switch
+    {
+        "VisionAuto" => "Vision (auto)", "VisionConfirmed" => "Vision (confirmé)", "VisionCorrected" => "Vision (corrigé)", _ => "Manuelle",
+    };
+
+    private static string PaymentLabel(string method) => method switch
+    {
+        "Cash" => "Espèces", "Card" => "Carte", "Account" => "Compte convive", _ => method,
+    };
+}

@@ -27,6 +27,7 @@ public static class DependencyInjection
             .AddInterceptors(sp.GetRequiredService<PosSaveChangesInterceptor>()));
         services.AddScoped<IPosDbContext>(sp => sp.GetRequiredService<PosDbContext>());
         services.AddScoped<IAccountLedger, AccountLedger>();
+        services.AddScoped<IRowVersionSource, SqlRowVersionSource>();
         services.Configure<FileStorageOptions>(configuration.GetSection(FileStorageOptions.Section));
         services.AddSingleton<IFileStorage, LocalFileStorage>();
         services.AddSingleton<IPinHasher>(_ => new Pbkdf2PinHasher(

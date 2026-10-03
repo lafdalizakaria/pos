@@ -1,0 +1,253 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:vm="clr-namespace:Newrest.Pos.Client.Core.ViewModels;assembly=Newrest.Pos.Client.Core"
+                    xmlns:data="clr-namespace:Newrest.Pos.Client.Core.Data;assembly=Newrest.Pos.Client.Core"
+                    xmlns:sales="clr-namespace:Newrest.Pos.Client.Core.Sales;assembly=Newrest.Pos.Client.Core">
+
+  <!-- ===== Messages common to every page ===== -->
+  <DataTemplate x:Key="Feedback">
+    <StackPanel>
+      <TextBlock Style="{StaticResource ErrorText}" Text="{Binding Error}" Visibility="{Binding Error, Converter={StaticResource NotNullToVisibility}}" />
+      <TextBlock Style="{StaticResource MessageText}" Text="{Binding Message}" Visibility="{Binding Message, Converter={StaticResource NotNullToVisibility}}" />
+    </StackPanel>
+  </DataTemplate>
+
+  <!-- ===== Registration ===== -->
+  <DataTemplate DataType="{x:Type vm:SetupViewModel}">
+    <Border Style="{StaticResource CardBorder}" MaxWidth="720" VerticalAlignment="Center">
+      <StackPanel>
+        <TextBlock Style="{StaticResource Title}" Text="Enregistrement de la caisse" />
+        <TextBlock Text="Adresse du serveur" />
+        <TextBox Text="{Binding ServerUrl, UpdateSourceTrigger=PropertyChanged}" />
+        <TextBlock Text="Identifiant de la caisse (back-office)" Margin="0,12,0,0" />
+        <TextBox Text="{Binding RegisterId, UpdateSourceTrigger=PropertyChanged}" />
+        <TextBlock Text="Clé d'appareil (affichée une seule fois dans le back-office)" Margin="0,12,0,0" />
+        <TextBox Text="{Binding DeviceKey, UpdateSourceTrigger=PropertyChanged}" />
+        <ContentControl Content="{Binding}" ContentTemplate="{StaticResource Feedback}" />
+        <Button Style="{StaticResource PayButton}" Content="Enregistrer" Command="{Binding RegisterCommand}" />
+      </StackPanel>
+    </Border>
+  </DataTemplate>
+
+  <!-- ===== Login (PIN keypad) ===== -->
+  <DataTemplate DataType="{x:Type vm:LoginViewModel}">
+    <Border Style="{StaticResource CardBorder}" MaxWidth="480" VerticalAlignment="Center">
+      <StackPanel>
+        <TextBlock Style="{StaticResource Title}" Text="Connexion opérateur" />
+        <TextBlock Text="Code opérateur" />
+        <TextBox Text="{Binding OperatorCode, UpdateSourceTrigger=PropertyChanged}" CharacterCasing="Upper" />
+        <TextBlock Text="PIN" Margin="0,12,0,0" />
+        <TextBlock FontSize="32" Text="{Binding Pin.Length, StringFormat='{}{0} chiffre(s)'}" />
+        <UniformGrid Columns="3">
+          <Button Style="{StaticResource KeyButton}" Content="1" Command="{Binding PressDigitCommand}" CommandParameter="1" />
+          <Button Style="{StaticResource KeyButton}" Content="2" Command="{Binding PressDigitCommand}" CommandParameter="2" />
+          <Button Style="{StaticResource KeyButton}" Content="3" Command="{Binding PressDigitCommand}" CommandParameter="3" />
+          <Button Style="{StaticResource KeyButton}" Content="4" Command="{Binding PressDigitCommand}" CommandParameter="4" />
+          <Button Style="{StaticResource KeyButton}" Content="5" Command="{Binding PressDigitCommand}" CommandParameter="5" />
+          <Button Style="{StaticResource KeyButton}" Content="6" Command="{Binding PressDigitCommand}" CommandParameter="6" />
+          <Button Style="{StaticResource KeyButton}" Content="7" Command="{Binding PressDigitCommand}" CommandParameter="7" />
+          <Button Style="{StaticResource KeyButton}" Content="8" Command="{Binding PressDigitCommand}" CommandParameter="8" />
+          <Button Style="{StaticResource KeyButton}" Content="9" Command="{Binding PressDigitCommand}" CommandParameter="9" />
+          <Button Style="{StaticResource KeyButton}" Content="C" Command="{Binding ClearPinCommand}" />
+          <Button Style="{StaticResource KeyButton}" Content="0" Command="{Binding PressDigitCommand}" CommandParameter="0" />
+          <Button Style="{StaticResource KeyButton}" Content="OK" Background="{StaticResource Ok}" Foreground="White" Command="{Binding LoginCommand}" />
+        </UniformGrid>
+        <ContentControl Content="{Binding}" ContentTemplate="{StaticResource Feedback}" />
+      </StackPanel>
+    </Border>
+  </DataTemplate>
+
+  <!-- ===== Opening ===== -->
+  <DataTemplate DataType="{x:Type vm:OpenSessionViewModel}">
+    <Border Style="{StaticResource CardBorder}" MaxWidth="560" VerticalAlignment="Center">
+      <StackPanel>
+        <TextBlock Style="{StaticResource Title}" Text="Ouverture de caisse" />
+        <TextBlock Text="Fond de caisse (MAD)" />
+        <TextBox Text="{Binding OpeningFloat, UpdateSourceTrigger=PropertyChanged}" />
+        <ContentControl Content="{Binding}" ContentTemplate="{StaticResource Feedback}" />
+        <Button Style="{StaticResource PayButton}" Content="Ouvrir la caisse" Command="{Binding OpenCommand}" />
+      </StackPanel>
+    </Border>
+  </DataTemplate>
+
+  <!-- ===== Sale ===== -->
+  <DataTemplate DataType="{x:Type vm:SaleViewModel}">
+    <Grid>
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="3*" />
+        <ColumnDefinition Width="2*" />
+      </Grid.ColumnDefinitions>
+
+      <!-- Menu of the day by category -->
+      <Border Style="{StaticResource CardBorder}">
+        <DockPanel>
+          <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+            <TextBox DockPanel.Dock="Right" Width="280" Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}" ToolTip="Rechercher un article" />
+            <TextBlock FontSize="22" FontWeight="Bold" VerticalAlignment="Center" Text="{Binding MenuLabel}" />
+          </DockPanel>
+          <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <ItemsControl ItemsSource="{Binding Groups}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="{x:Type data:MenuCategoryGroup}">
+                  <StackPanel Margin="0,0,0,8">
+                    <TextBlock FontWeight="Bold" Text="{Binding Name}" Margin="4,8,0,4" />
+                    <ItemsControl ItemsSource="{Binding Items}">
+                      <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                      </ItemsControl.ItemsPanel>
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type data:MenuButton}">
+                          <Button Style="{StaticResource BigButton}" Width="190" Height="96" Background="{Binding Color, Converter={StaticResource HexBrush}}"
+                                  Command="{Binding DataContext.AddItemCommand, RelativeSource={RelativeSource AncestorType=ItemsControl, AncestorLevel=2}}"
+                                  CommandParameter="{Binding}">
+                            <StackPanel>
+                              <TextBlock Text="{Binding Label}" TextWrapping="Wrap" TextAlignment="Center" FontSize="17" />
+                              <TextBlock Text="{Binding Price}" HorizontalAlignment="Center" FontSize="20" />
+                            </StackPanel>
+                          </Button>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </StackPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+        </DockPanel>
+      </Border>
+
+      <!-- Ticket, diner, payment -->
+      <Border Grid.Column="1" Style="{StaticResource CardBorder}">
+        <DockPanel>
+          <StackPanel DockPanel.Dock="Bottom">
+            <ContentControl Content="{Binding}" ContentTemplate="{StaticResource Feedback}" />
+            <DockPanel><TextBlock DockPanel.Dock="Right" Text="{Binding Total, Converter={StaticResource Mad}}" /><TextBlock Text="Total" /></DockPanel>
+            <DockPanel><TextBlock DockPanel.Dock="Right" Text="{Binding Subsidy, Converter={StaticResource Mad}}" /><TextBlock Text="Subvention" /></DockPanel>
+            <DockPanel><TextBlock DockPanel.Dock="Right" FontSize="30" FontWeight="Bold" Text="{Binding Remaining, Converter={StaticResource Mad}}" />
+              <TextBlock FontSize="30" FontWeight="Bold" Text="À payer" /></DockPanel>
+            <TextBlock Text="{Binding DinerLine}" TextWrapping="Wrap" Margin="0,6" />
+            <DockPanel>
+              <Button DockPanel.Dock="Right" Style="{StaticResource SecondaryButton}" Content="Badge" Command="{Binding ScanBadgeCommand}"
+                      CommandParameter="{Binding Text, ElementName=BadgeBox}" />
+              <TextBox x:Name="BadgeBox" Tag="badge-capture-clear" ToolTip="Badge (lecteur ou saisie manuelle)" />
+            </DockPanel>
+            <UniformGrid Columns="3">
+              <Button Style="{StaticResource PayButton}" Content="Compte" Command="{Binding PayWithAccountCommand}"
+                      IsEnabled="{Binding CanPayWithAccount}" />
+              <Button Style="{StaticResource PayButton}" Content="Espèces" Command="{Binding PayCashCommand}" />
+              <Button Style="{StaticResource PayButton}" Content="Carte" Command="{Binding PayCardCommand}" />
+            </UniformGrid>
+            <UniformGrid Columns="2">
+              <StackPanel Margin="4">
+                <TextBlock Text="Montant reçu (espèces)" />
+                <TextBox Text="{Binding Tendered, UpdateSourceTrigger=PropertyChanged, TargetNullValue=''}" />
+                <TextBlock Text="{Binding Change, Converter={StaticResource Mad}, StringFormat='Rendu : {0}'}" />
+              </StackPanel>
+              <StackPanel Margin="4">
+                <TextBlock Text="Autorisation TPE" />
+                <TextBox Text="{Binding CardAuthorization, UpdateSourceTrigger=PropertyChanged}" />
+              </StackPanel>
+            </UniformGrid>
+            <UniformGrid Columns="2">
+              <Button Style="{StaticResource SecondaryButton}" Content="Retirer le convive" Command="{Binding ClearDinerCommand}" />
+              <Button Style="{StaticResource SecondaryButton}" Content="Annuler le ticket" Command="{Binding NewCartCommand}" />
+            </UniformGrid>
+          </StackPanel>
+          <ListBox ItemsSource="{Binding Cart.Lines}" BorderThickness="0" HorizontalContentAlignment="Stretch">
+            <ListBox.ItemTemplate>
+              <DataTemplate DataType="{x:Type sales:CartLine}">
+                <DockPanel Margin="0,4">
+                  <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button Style="{StaticResource SecondaryButton}" MinWidth="56" Content="−"
+                            Command="{Binding DataContext.DecrementCommand, RelativeSource={RelativeSource AncestorType=ListBox}}" CommandParameter="{Binding}" />
+                    <Button Style="{StaticResource SecondaryButton}" MinWidth="56" Content="+"
+                            Command="{Binding DataContext.IncrementCommand, RelativeSource={RelativeSource AncestorType=ListBox}}" CommandParameter="{Binding}" />
+                  </StackPanel>
+                  <TextBlock DockPanel.Dock="Right" Margin="8,0" VerticalAlignment="Center" Text="{Binding Amount, Converter={StaticResource Mad}}" />
+                  <TextBlock VerticalAlignment="Center" TextWrapping="Wrap">
+                    <Run Text="{Binding Quantity, Mode=OneWay}" /><Run Text=" × " /><Run Text="{Binding Label, Mode=OneWay}" />
+                  </TextBlock>
+                </DockPanel>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </DockPanel>
+      </Border>
+    </Grid>
+  </DataTemplate>
+
+  <!-- ===== History (reprint, credit note) ===== -->
+  <DataTemplate DataType="{x:Type vm:HistoryViewModel}">
+    <Border Style="{StaticResource CardBorder}">
+      <DockPanel>
+        <TextBlock DockPanel.Dock="Top" Style="{StaticResource Title}" Text="Historique de la session" />
+        <StackPanel DockPanel.Dock="Bottom">
+          <ContentControl Content="{Binding}" ContentTemplate="{StaticResource Feedback}" />
+          <StackPanel Orientation="Horizontal">
+            <Button Style="{StaticResource BigButton}" Content="Réimprimer" Command="{Binding ReprintCommand}" />
+            <TextBox Width="360" Margin="12,0" Text="{Binding CreditReason, UpdateSourceTrigger=PropertyChanged}" ToolTip="Motif de l'avoir"
+                     Visibility="{Binding IsSupervisor, Converter={StaticResource BoolToVisibility}}" />
+            <Button Style="{StaticResource BigButton}" Background="{StaticResource Danger}" Content="Avoir (responsable)" Command="{Binding CreditNoteCommand}"
+                    Visibility="{Binding IsSupervisor, Converter={StaticResource BoolToVisibility}}" />
+          </StackPanel>
+        </StackPanel>
+        <DataGrid ItemsSource="{Binding Tickets}" SelectedItem="{Binding Selected}" AutoGenerateColumns="False" IsReadOnly="True" RowHeight="44">
+          <DataGrid.Columns>
+            <DataGridTextColumn Header="Numéro" Binding="{Binding Number}" />
+            <DataGridTextColumn Header="Type" Binding="{Binding Kind}" />
+            <DataGridTextColumn Header="Heure" Binding="{Binding IssuedAt.LocalDateTime, StringFormat='HH:mm'}" />
+            <DataGridTextColumn Header="Badge" Binding="{Binding BadgeNumber}" />
+            <DataGridTextColumn Header="Total" Binding="{Binding TotalAmount, Converter={StaticResource Mad}}" />
+            <DataGridTextColumn Header="Subvention" Binding="{Binding SubsidyAmount, Converter={StaticResource Mad}}" />
+            <DataGridTextColumn Header="Part convive" Binding="{Binding DinerShare, Converter={StaticResource Mad}}" />
+          </DataGrid.Columns>
+        </DataGrid>
+      </DockPanel>
+    </Border>
+  </DataTemplate>
+
+  <!-- ===== Top-up / balance ===== -->
+  <DataTemplate DataType="{x:Type vm:TopUpViewModel}">
+    <Border Style="{StaticResource CardBorder}" MaxWidth="640" VerticalAlignment="Center">
+      <StackPanel>
+        <TextBlock Style="{StaticResource Title}" Text="Recharge et consultation de solde" />
+        <TextBlock Text="Badger le convive (ou saisir le numéro)" />
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Style="{StaticResource SecondaryButton}" Content="Rechercher" Command="{Binding ScanCommand}"
+                  CommandParameter="{Binding Text, ElementName=TopUpBadge}" />
+          <TextBox x:Name="TopUpBadge" Tag="badge-capture-clear" />
+        </DockPanel>
+        <TextBlock Text="Montant (MAD)" Margin="0,12,0,0" />
+        <TextBox Text="{Binding Amount, UpdateSourceTrigger=PropertyChanged}" />
+        <TextBlock Text="Moyen de paiement" Margin="0,12,0,0" />
+        <ComboBox SelectedValue="{Binding Method}" SelectedValuePath="Tag" FontSize="20" MinHeight="48">
+          <ComboBoxItem Content="Espèces" Tag="Cash" />
+          <ComboBoxItem Content="Carte bancaire" Tag="Card" />
+        </ComboBox>
+        <ContentControl Content="{Binding}" ContentTemplate="{StaticResource Feedback}" />
+        <Button Style="{StaticResource PayButton}" Content="Recharger" Command="{Binding TopUpCommand}" />
+      </StackPanel>
+    </Border>
+  </DataTemplate>
+
+  <!-- ===== Closing (Z) ===== -->
+  <DataTemplate DataType="{x:Type vm:CloseSessionViewModel}">
+    <Border Style="{StaticResource CardBorder}" MaxWidth="640" VerticalAlignment="Center">
+      <StackPanel>
+        <TextBlock Style="{StaticResource Title}" Text="Clôture de caisse (Z)" />
+        <TextBlock Text="Espèces comptées dans le tiroir (MAD)" />
+        <TextBox Text="{Binding CountedCash, UpdateSourceTrigger=PropertyChanged}" />
+        <Button Style="{StaticResource SecondaryButton}" Content="Calculer l'écart" Command="{Binding PreviewCommand}" />
+        <StackPanel Visibility="{Binding Preview, Converter={StaticResource NotNullToVisibility}}">
+          <TextBlock Text="{Binding Preview.NetSales, Converter={StaticResource Mad}, StringFormat='CA net TTC : {0}'}" />
+          <TextBlock Text="{Binding Preview.ExpectedCash, Converter={StaticResource Mad}, StringFormat='Espèces attendues : {0}'}" />
+          <TextBlock FontWeight="Bold" Text="{Binding Preview.CashDifference, Converter={StaticResource Mad}, StringFormat='Écart : {0}'}" />
+        </StackPanel>
+        <ContentControl Content="{Binding}" ContentTemplate="{StaticResource Feedback}" />
+        <Button Style="{StaticResource PayButton}" Background="{StaticResource Danger}" Content="Clôturer et imprimer le Z" Command="{Binding CloseCommand}" />
+        <Button Style="{StaticResource SecondaryButton}" Content="Terminer" Command="{Binding FinishCommand}"
+                Visibility="{Binding Closed, Converter={StaticResource NotNullToVisibility}}" />
+      </StackPanel>
+    </Border>
+  </DataTemplate>
+</ResourceDictionary>
