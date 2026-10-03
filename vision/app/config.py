@@ -45,9 +45,25 @@ class Settings(BaseSettings):
     #: 0 disables "thinking" on flash models: lower latency, enough for closed-set recognition.
     gemini_thinking_budget: int | None = 0
 
-    yolo_model_path: str = "models/tray.onnx"
-    #: Hybrid: below this YOLO confidence (or for an unknown class), Gemini is asked.
+    #: Installed models: ``<models_dir>/<version>/model.onnx`` + ``manifest.json`` (pushed by the register).
+    models_dir: str = "data/models"
+    #: Active model version (normally set by the register from the server's site settings).
+    yolo_model_version: str | None = None
+    #: Development only: an ONNX file used when no version is active (its classes come from ``<file>.json``).
+    yolo_model_path: str | None = None
+    #: Minimum class score kept by YOLO, and IoU of the non-maximum suppression (class-agnostic: one object, one box).
+    yolo_min_confidence: float = 0.25
+    yolo_nms_iou: float = 0.5
+    yolo_threads: int = 2
+    #: Hybrid: Gemini is asked when a YOLO detection is below this confidence, when YOLO sees nothing, or when
+    #: today's menu has articles the model was not trained on.
     hybrid_min_confidence: float = 0.6
+    hybrid_ask_gemini_for_unknown_articles: bool = True
+    #: Number of installed model versions kept (rollback).
+    models_kept: int = 3
+    #: Written by the service when the register pushes the site settings (provider, model): between the environment
+    #: and the local override file (``VISION_CONFIG_FILE`` always wins: emergency switch on site).
+    runtime_file: str = "data/runtime.json"
 
     dataset_enabled: bool = True
     dataset_dir: str = "data/dataset"
@@ -80,6 +96,8 @@ class Settings(BaseSettings):
         "mock_scenarios_dir",
         "camera_crop",
         "gemini_api_key_file",
+        "yolo_model_version",
+        "yolo_model_path",
         "camera_exposure",
         "camera_white_balance",
         mode="before",
@@ -91,38 +109,76 @@ class Settings(BaseSettings):
 
 
 class SettingsProvider:
-    """Returns current settings, reloading the optional JSON override file when it changes."""
+    """Current settings = environment < runtime file (pushed by the register) < local override file.
 
-    def __init__(self, base: Settings | None = None, config_file: str | None = None) -> None:
+    Both files are re-read when they change: the provider and the model are switched without restarting anything.
+    """
+
+    def __init__(self, base: Settings | None = None, config_file: str | None = None, runtime_file: str | None = None) -> None:
         self._base = base or Settings()
-        self._file = (
-            Path(config_file or os.environ.get("VISION_CONFIG_FILE", ""))
-            if (config_file or os.environ.get("VISION_CONFIG_FILE"))
-            else None
-        )
-        self._mtime: float | None = None
+        local = config_file or os.environ.get("VISION_CONFIG_FILE") or None
+        self._runtime = Path(runtime_file or self._base.runtime_file)
+        self._files = [self._runtime, *([Path(local)] if local else [])]
+        self._stamps: tuple[float | None, ...] | None = None
+        self._layers: dict[Path, dict] = {}
         self._current = self._base
         self._lock = threading.Lock()
 
+    @property
+    def runtime_path(self) -> Path:
+        return self._runtime
+
+    def local_override_keys(self) -> set[str]:
+        """Keys forced by the local override file (it wins over what the register pushes)."""
+        self.get()
+        return set().union(*(self._layers.get(f, {}).keys() for f in self._files[1:]))
+
     def get(self) -> Settings:
-        if self._file is None:
-            return self._current
-        try:
-            mtime = self._file.stat().st_mtime
-        except FileNotFoundError:
-            return self._current
-        if mtime != self._mtime:
+        stamps = tuple(_mtime(f) for f in self._files)
+        if stamps != self._stamps:
             with self._lock:
-                if mtime != self._mtime:
-                    self._mtime = mtime
-                    try:
-                        overrides = json.loads(self._file.read_text(encoding="utf-8"))
-                        merged = {**self._base.model_dump(), **_coerce(overrides)}
-                        self._current = Settings.model_validate(merged)
-                    except (OSError, ValueError) as ex:
-                        # A bad edit must not stop the service: keep the last valid configuration.
-                        log.error("Ignoring invalid %s: %s", self._file, ex)
+                if stamps != self._stamps:
+                    self._stamps = stamps
+                    self._reload()
         return self._current
+
+    def write_runtime(self, values: dict) -> Settings:
+        """Validates then atomically writes the runtime layer (provider, model version) and returns the new settings."""
+        with self._lock:
+            candidate = {**self._layers.get(self._runtime, {}), **values}
+            Settings.model_validate({**self._base.model_dump(), **_coerce(candidate)})  # raises on invalid values
+            self._runtime.parent.mkdir(parents=True, exist_ok=True)
+            temporary = self._runtime.with_suffix(".tmp")
+            temporary.write_text(json.dumps(candidate, indent=1), encoding="utf-8")
+            os.replace(temporary, self._runtime)
+            self._stamps = None
+        return self.get()
+
+    def _reload(self) -> None:
+        merged = self._base.model_dump()
+        for path in self._files:
+            if _mtime(path) is None:
+                self._layers.pop(path, None)
+                continue
+            try:
+                layer = json.loads(path.read_text(encoding="utf-8"))
+                if not isinstance(layer, dict):
+                    raise ValueError("un objet JSON est attendu")
+                Settings.model_validate({**merged, **_coerce(layer)})
+                self._layers[path] = layer
+            except (OSError, ValueError) as ex:
+                # A bad edit must not stop the service: keep the last valid content of this layer.
+                log.error("Ignoring invalid %s: %s", path, ex)
+            merged.update(_coerce(self._layers.get(path, {})))
+        # Without any layer the base settings are used as given (tests inject providers outside the Literal).
+        self._current = Settings.model_validate(merged) if self._layers else self._base
+
+
+def _mtime(path: Path) -> float | None:
+    try:
+        return path.stat().st_mtime_ns
+    except OSError:
+        return None
 
 
 def _coerce(overrides: dict) -> dict:

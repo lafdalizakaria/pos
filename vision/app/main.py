@@ -6,6 +6,8 @@ GET  /camera/capture  JPEG of the tray area (fixed exposure, cropped: never a fa
 POST /feedback   JSON: lines validated by the cashier
 GET  /health
 POST /dataset/upload  pushes validated dataset items to the central container (if configured)
+GET  /models, PUT /models/{version}  installed YOLO models; installation of a model pushed by the register
+PUT  /runtime    provider + model chosen in the back-office for the site (pushed by the register)
 """
 
 from __future__ import annotations
@@ -26,8 +28,9 @@ from app.camera import Camera, CameraUnavailableError
 from app.config import Settings, SettingsProvider
 from app.dataset import DatasetStore
 from app.images import InvalidImageError, contains_face, prepare
-from app.models import Candidate, FeedbackRequest, FeedbackResponse, HealthResponse, RecognizeResponse
-from app.providers.base import ProviderUnavailableError
+from app.model_store import ModelInstallError, ModelManifest, ModelStore
+from app.models import Candidate, FeedbackRequest, FeedbackResponse, HealthResponse, RecognizeResponse, RuntimeRequest
+from app.providers.base import ProviderResult, ProviderUnavailableError
 from app.providers.registry import ProviderRegistry
 from app.recognition import finalize
 
@@ -47,9 +50,7 @@ def create_app(
     def dataset(current: Settings) -> DatasetStore:
         return DatasetStore(current.dataset_dir, current.dataset_max_items)
 
-    @app.get("/health", response_model=HealthResponse)
-    async def health() -> HealthResponse:
-        current = settings.get()
+    def health_of(current: Settings) -> HealthResponse:
         ready, detail = registry.get(current).readiness(current)
         return HealthResponse(
             status="ok" if ready else "degraded",
@@ -57,7 +58,71 @@ def create_app(
             provider_ready=ready,
             detail=detail,
             dataset_items=dataset(current).count() if current.dataset_enabled else 0,
+            model_version=current.yolo_model_version,
+            models_installed=[m.version for m in ModelStore(current.models_dir).installed()],
+            local_override=settings.local_override_keys() & {"provider", "yolo_model_version"} != set(),
         )
+
+    @app.get("/health", response_model=HealthResponse)
+    async def health() -> HealthResponse:
+        return await asyncio.to_thread(health_of, settings.get())
+
+    @app.get("/models")
+    async def list_models() -> dict:
+        current = settings.get()
+        return {
+            "active": current.yolo_model_version,
+            "installed": [m.model_dump() for m in ModelStore(current.models_dir).installed()],
+        }
+
+    @app.put("/models/{version}")
+    async def install_model(
+        version: str,
+        model: Annotated[UploadFile, File(description="model.onnx")],
+        manifest: Annotated[str, Form(description="manifest.json produit par l'entraînement")],
+        response: Response,
+    ) -> dict:
+        current = settings.get()
+        try:
+            parsed = ModelManifest.model_validate_json(manifest)
+        except ValidationError as ex:
+            raise HTTPException(422, detail={"code": "invalid_manifest", "message": str(ex.errors()[:3])}) from ex
+        if parsed.version != version:
+            raise HTTPException(422, detail={"code": "invalid_manifest", "message": "Version du manifeste différente de l'URL."})
+
+        async def chunks():
+            while chunk := await model.read(1024 * 1024):
+                yield chunk
+
+        data = [c async for c in chunks()]
+        try:
+            created = await asyncio.to_thread(ModelStore(current.models_dir).install, parsed, data)
+        except ModelInstallError as ex:
+            raise HTTPException(
+                409 if ex.code == "version_conflict" else 422, detail={"code": ex.code, "message": str(ex)}
+            ) from ex
+        response.status_code = 201 if created else 200
+        return {"version": version, "installed": created}
+
+    @app.put("/runtime", response_model=HealthResponse)
+    async def set_runtime(request: RuntimeRequest) -> HealthResponse:
+        current = settings.get()
+        store = ModelStore(current.models_dir)
+        if request.provider in ("yolo", "hybrid") and request.model_version is None:
+            raise HTTPException(422, detail={"code": "model_required", "message": "Le mode YOLO/hybride exige un modèle."})
+        if request.model_version is not None and store.get(request.model_version) is None:
+            raise HTTPException(409, detail={"code": "model_not_installed", "message": f"Modèle {request.model_version} absent."})
+        values: dict = {"provider": request.provider, "yolo_model_version": request.model_version}
+        if request.hybrid_min_confidence is not None:
+            values["hybrid_min_confidence"] = request.hybrid_min_confidence
+        previous = current.yolo_model_version
+        updated = await asyncio.to_thread(settings.write_runtime, values)
+        protect = {v for v in (updated.yolo_model_version, previous) if v}
+        removed = await asyncio.to_thread(store.prune, updated.models_kept, protect)
+        if removed:
+            log.info("Old models removed: %s", removed)
+        log.info("Runtime set by the register: provider=%s model=%s", updated.provider, updated.yolo_model_version)
+        return await asyncio.to_thread(health_of, updated)
 
     @app.post("/recognize", response_model=RecognizeResponse)
     async def recognize(
@@ -106,6 +171,9 @@ def create_app(
         except Exception as ex:  # noqa: BLE001 - provider SDK errors (network, quota): never block the sale
             log.warning("Provider %s failed: %s", provider.name, ex)
             raise HTTPException(502, detail={"code": "provider_error", "message": type(ex).__name__}) from ex
+        label = provider.name
+        if isinstance(raw, ProviderResult):
+            raw, label = raw.detections, raw.label
         latency = round((time.perf_counter() - started) * 1000)
 
         items, rejected = finalize(raw, parsed, prepared)
@@ -114,7 +182,7 @@ def create_app(
         response = RecognizeResponse(
             recognition_id=uuid.uuid4().hex,
             items=items,
-            provider=provider.name,
+            provider=label,
             latency_ms=latency,
             image_width=prepared.original_width,
             image_height=prepared.original_height,

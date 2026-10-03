@@ -56,7 +56,14 @@ class StubProvider:
 
 @pytest.fixture
 def settings(tmp_path) -> Settings:
-    return Settings(provider="mock", dataset_dir=str(tmp_path / "dataset"), mock_latency_ms=0, gemini_api_key=None)
+    return Settings(
+        provider="mock",
+        dataset_dir=str(tmp_path / "dataset"),
+        models_dir=str(tmp_path / "models"),
+        runtime_file=str(tmp_path / "runtime.json"),
+        mock_latency_ms=0,
+        gemini_api_key=None,
+    )
 
 
 def client_for(settings: Settings, **providers) -> TestClient:

@@ -19,6 +19,14 @@ class RawDetection:
     alternatives: list[tuple[str, float]] = field(default_factory=list)
 
 
+@dataclass
+class ProviderResult:
+    """Detections plus the label reported to the register (e.g. ``yolo:20261003-2213`` or ``hybrid:...+gemini``)."""
+
+    detections: list[RawDetection]
+    label: str
+
+
 class ProviderUnavailableError(RuntimeError):
     """Configuration or dependency missing (no API key, no model file...)."""
 
@@ -26,6 +34,8 @@ class ProviderUnavailableError(RuntimeError):
 class RecognitionProvider(Protocol):
     name: str
 
-    async def recognize(self, image: PreparedImage, candidates: list[Candidate], settings: Settings) -> list[RawDetection]: ...
+    async def recognize(
+        self, image: PreparedImage, candidates: list[Candidate], settings: Settings
+    ) -> list[RawDetection] | ProviderResult: ...
 
     def readiness(self, settings: Settings) -> tuple[bool, str | None]: ...

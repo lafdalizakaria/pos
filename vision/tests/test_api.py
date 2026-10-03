@@ -20,6 +20,9 @@ def test_health_reports_provider(settings):
         "provider_ready": True,
         "detail": None,
         "dataset_items": 0,
+        "model_version": None,
+        "models_installed": [],
+        "local_override": False,
     }
 
 

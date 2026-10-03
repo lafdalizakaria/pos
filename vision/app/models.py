@@ -71,3 +71,16 @@ class HealthResponse(BaseModel):
     provider_ready: bool
     detail: str | None = None
     dataset_items: int
+    #: Active YOLO model (used by the yolo and hybrid providers) and the versions installed on this register.
+    model_version: str | None = None
+    models_installed: list[str] = Field(default_factory=list)
+    #: True when ``VISION_CONFIG_FILE`` forces the provider locally (the register's pushes are then overridden).
+    local_override: bool = False
+
+
+class RuntimeRequest(BaseModel):
+    """Site settings pushed by the register (from the back-office)."""
+
+    provider: Literal["mock", "gemini", "yolo", "hybrid"]
+    model_version: str | None = Field(default=None, max_length=32)
+    hybrid_min_confidence: float | None = Field(default=None, ge=0, le=1)

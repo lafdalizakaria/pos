@@ -1,6 +1,6 @@
 [project]
 name = "newrest-pos-vision"
-version = "0.4.0"
+version = "0.5.0"
 description = "Service local de reconnaissance des plateaux (Newrest POS)"
 requires-python = ">=3.12,<3.13"
 dependencies = [
@@ -13,17 +13,20 @@ dependencies = [
     "opencv-python-headless>=4.10,<5",
     "numpy>=1.26",
     "httpx>=0.27",
+    "onnxruntime>=1.18",
 ]
 
 [project.optional-dependencies]
-yolo = ["ultralytics>=8.3", "onnxruntime>=1.18"]
+# Training machine only (PyTorch): python -m training ... — never installed on the registers.
+training = ["ultralytics>=8.3", "onnx>=1.16"]
 
 [dependency-groups]
-dev = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.6"]
+dev = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.6", "onnx>=1.16"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = ["training: trains a real YOLO model (needs the 'training' extra, slow)"]
 
 [tool.ruff]
 line-length = 130
@@ -35,3 +38,5 @@ ignore = ["S101"]
 
 [tool.uv]
 package = false
+# Ultralytics pulls opencv-python: keep it on 4.x like the headless build (OpenCV 5 dropped the Haar cascades).
+constraint-dependencies = ["opencv-python<5"]
