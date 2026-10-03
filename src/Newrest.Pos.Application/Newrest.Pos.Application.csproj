@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Newrest.Pos.Application</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Newrest.Pos.Domain/Newrest.Pos.Domain.csproj" />
+    <ProjectReference Include="../Newrest.Pos.Contracts/Newrest.Pos.Contracts.csproj" />
+  </ItemGroup>
+</Project>
