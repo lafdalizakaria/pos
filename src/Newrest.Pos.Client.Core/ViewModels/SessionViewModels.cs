@@ -97,7 +97,8 @@ public sealed partial class OpenSessionViewModel(CashSessionService sessions, Op
     }
 }
 
-public sealed partial class CloseSessionViewModel(CashSessionService sessions, OperatorLoginService login, Lazy<ShellViewModel> shell) : PageViewModel
+public sealed partial class CloseSessionViewModel(CashSessionService sessions, OperatorLoginService login, Lazy<ShellViewModel> shell,
+    Local.LocalBackupService backups) : PageViewModel
 {
     [ObservableProperty]
     private decimal _countedCash;
@@ -119,11 +120,21 @@ public sealed partial class CloseSessionViewModel(CashSessionService sessions, O
     private async Task PreviewAsync() => await RunAsync(async () => Preview = await sessions.PreviewAsync(CountedCash));
 
     [RelayCommand]
-    private async Task CloseAsync()
+    private Task CloseAsync() => CloseCoreAsync(forced: false);
+
+    /// <summary>Supervisor closing a session left open (cashier absent): flagged « forcée » on the Z.</summary>
+    [RelayCommand]
+    private Task ForceCloseAsync() => IsSupervisor ? CloseCoreAsync(forced: true) : Task.CompletedTask;
+
+    /// <summary>Backup after the Z (completed in the background; a failure is logged, never shown as a closing error).</summary>
+    public Task LastBackup { get; private set; } = Task.CompletedTask;
+
+    private async Task CloseCoreAsync(bool forced)
     {
-        if (await RunAsync(async () => Closed = await sessions.CloseAsync(login.Current!.Id, CountedCash, forced: false)))
+        if (await RunAsync(async () => Closed = await sessions.CloseAsync(login.Current!.Id, CountedCash, forced)))
         {
-            Message = $"Clôture Z n° {Closed!.ZNumber} enregistrée. Écart : {Format.Mad(Closed.CashDifference)}.";
+            Message = $"Clôture Z n° {Closed!.ZNumber}{(forced ? " (forcée)" : "")} enregistrée. Écart : {Format.Mad(Closed.CashDifference)}.";
+            LastBackup = backups.BackupIfDueAsync(default, force: true);
         }
     }
 

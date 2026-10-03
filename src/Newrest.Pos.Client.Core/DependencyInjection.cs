@@ -47,6 +47,7 @@ public static class DependencyInjection
         services.AddSingleton<ReferencePhotoCache>();
         services.AddSingleton<TrayRecognitionService>();
         services.AddSingleton<VisionDeploymentService>();
+        services.AddSingleton<LocalBackupService>();
 
         services.AddSingleton<ShellViewModel>();
         services.AddSingleton(sp => new Lazy<ShellViewModel>(sp.GetRequiredService<ShellViewModel>));
@@ -57,6 +58,7 @@ public static class DependencyInjection
         services.AddTransient<HistoryViewModel>();
         services.AddTransient<TopUpViewModel>();
         services.AddTransient<CloseSessionViewModel>();
+        services.AddTransient<SupervisorViewModel>();
         return services;
     }
 }

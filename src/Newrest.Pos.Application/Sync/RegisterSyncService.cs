@@ -79,6 +79,12 @@ public sealed partial class RegisterSyncService(IPosDbContext db, IAccountLedger
             IsOfflineReplay = dto.IsOfflineReplay,
         };
         var result = await ledger.PostAsync(dto.AccountId, request, cancellationToken: ct);
+        if (!result.WasDuplicate)
+        {
+            Operations.PosMetrics.LedgerMovements.Add(1, new KeyValuePair<string, object?>("type", dto.Type),
+                new KeyValuePair<string, object?>("offline", dto.IsOfflineReplay));
+        }
+
         return new LedgerResultDto(result.MovementId, result.AccountId, result.Amount, result.BalanceAfter, result.WasDuplicate);
     }
 
@@ -153,6 +159,7 @@ public sealed partial class RegisterSyncService(IPosDbContext db, IAccountLedger
         register.LastSyncedTicketHash = ticket.Hash;
         register.LastSeenAt = clock.GetUtcNow();
         await db.SaveChangesAsync(ct);
+        Operations.PosMetrics.TicketsIngested.Add(1);
         return new SyncAck(dto.Id, WasDuplicate: false);
     }
 

@@ -93,6 +93,9 @@ public sealed partial class ShellViewModel : ObservableObject
     private async Task ShowCloseAsync() => await Navigate<CloseSessionViewModel>().LoadAsync();
 
     [RelayCommand]
+    private async Task ShowSupervisorAsync() => await Navigate<SupervisorViewModel>().LoadAsync();
+
+    [RelayCommand]
     private async Task SyncNowAsync() => await _sync.RunOnceAsync(forceReference: true);
 
     [RelayCommand]

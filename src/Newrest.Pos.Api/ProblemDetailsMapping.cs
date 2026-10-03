@@ -28,6 +28,11 @@ public sealed partial class DomainExceptionHandler(IProblemDetailsService proble
             LogConflict(logger, exception);
         }
 
+        if (httpContext.Request.Path.StartsWithSegments("/api/v1/register"))
+        {
+            Application.Operations.PosMetrics.SyncRejections.Add(1, new KeyValuePair<string, object?>("code", code));
+        }
+
         httpContext.Response.StatusCode = status;
         return await problemDetails.TryWriteAsync(new ProblemDetailsContext
         {

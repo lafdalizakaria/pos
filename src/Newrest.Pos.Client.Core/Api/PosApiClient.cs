@@ -75,6 +75,9 @@ public sealed class PosApiClient(HttpClient http, RegisterOptions options, IDevi
     public Task<SyncAck> PostRecognitionAsync(RecognitionSyncDto dto, CancellationToken ct = default) =>
         SendAsync<SyncAck>(HttpMethod.Post, "register/recognitions", dto, ct);
 
+    public async Task SendHeartbeatAsync(RegisterHeartbeatDto dto, CancellationToken ct = default) =>
+        await SendAsync<System.Text.Json.JsonElement?>(HttpMethod.Post, "register/heartbeat", dto, ct);
+
     public Task<RegisterVisionConfigDto> GetVisionConfigAsync(CancellationToken ct = default) =>
         SendAsync<RegisterVisionConfigDto>(HttpMethod.Get, "register/vision", null, ct);
 

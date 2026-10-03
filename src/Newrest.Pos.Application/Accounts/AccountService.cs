@@ -15,6 +15,9 @@ namespace Newrest.Pos.Application.Accounts;
 /// </summary>
 public sealed class AccountService(IPosDbContext db, IAccountLedger ledger, AccessControl access, AuditTrail audit, TimeProvider clock)
 {
+    /// <summary>A register debit whose ticket is still missing after this delay may be reversed by finance (reconciliation).</summary>
+    public static readonly TimeSpan OrphanDebitDelay = TimeSpan.FromHours(2);
+
     public async Task<PagedResult<AccountDto>> ListAsync(Guid clientCompanyId, string? search = null, int page = 1, int pageSize = 50,
         CancellationToken ct = default)
     {
@@ -123,7 +126,13 @@ public sealed class AccountService(IPosDbContext db, IAccountLedger ledger, Acce
                        ?? throw new NotFoundException("AccountMovement", movementId);
         if (original.Type == MovementType.Consumption)
         {
-            throw new DomainException("use_credit_note", "A consumption is cancelled by a credit note on its ticket, not by a reversal.");
+            // Exception: a register debit whose ticket never arrived (lost response + offline refusal) has no ticket to credit.
+            var orphan = original.TicketId is { } ticketId && original.OccurredAt < clock.GetUtcNow().Add(-OrphanDebitDelay)
+                         && !await db.Tickets.AnyAsync(t => t.Id == ticketId, ct);
+            if (!orphan)
+            {
+                throw new DomainException("use_credit_note", "A consumption is cancelled by a credit note on its ticket, not by a reversal.");
+            }
         }
 
         var reason = Guard.NotBlank(request.Reason, nameof(request.Reason), 500);

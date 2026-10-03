@@ -2,9 +2,11 @@ using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Newrest.Pos.Api;
 using Newrest.Pos.Api.Endpoints;
+using Newrest.Pos.Api.Operations;
 using Newrest.Pos.Api.Security;
 using Newrest.Pos.Application;
 using Newrest.Pos.Application.Abstractions;
+using Newrest.Pos.Application.Operations;
 using Newrest.Pos.Contracts;
 using Newrest.Pos.Infrastructure;
 using Newrest.Pos.Infrastructure.Persistence;
@@ -35,6 +37,12 @@ builder.Services.AddRateLimiter(o =>
         context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = 20, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
 });
+var supervision = builder.Configuration.GetSection("Supervision").Get<SupervisionOptions>() ?? new SupervisionOptions();
+builder.Services.AddSingleton(supervision);
+builder.Services.AddSingleton(supervision.Thresholds);
+builder.Services.AddHttpClient(nameof(SupervisionWorker), c => c.Timeout = TimeSpan.FromSeconds(10));
+builder.Services.AddSingleton<SupervisionWorker>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<SupervisionWorker>());
 builder.Services.AddOpenApi(ApiVersion.V1);
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<DomainExceptionHandler>();
@@ -44,7 +52,7 @@ builder.Services.AddHealthChecks()
 var otel = builder.Services.AddOpenTelemetry()
     .ConfigureResource(r => r.AddService("newrest-pos-api"))
     .WithTracing(t => t.AddAspNetCoreInstrumentation())
-    .WithMetrics(m => m.AddAspNetCoreInstrumentation());
+    .WithMetrics(m => m.AddAspNetCoreInstrumentation().AddMeter(PosMetrics.MeterName));
 if (!string.IsNullOrWhiteSpace(builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]))
 {
     otel.UseOtlpExporter();
@@ -83,6 +91,7 @@ backOffice.MapClientEndpoints();
 backOffice.MapAccountEndpoints();
 backOffice.MapSalesEndpoints();
 backOffice.MapVisionEndpoints();
+backOffice.MapSupervisionEndpoints();
 
 await app.RunAsync();
 

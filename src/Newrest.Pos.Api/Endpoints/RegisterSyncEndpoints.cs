@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Newrest.Pos.Api.Security;
 using Newrest.Pos.Application.Abstractions;
 using Newrest.Pos.Application.Catalog;
+using Newrest.Pos.Application.Operations;
 using Newrest.Pos.Application.Sync;
 using Newrest.Pos.Application.Vision;
 using Newrest.Pos.Contracts.V1.Sync;
@@ -39,6 +40,12 @@ public static class RegisterSyncEndpoints
         g.MapGet("/photos/{photoId:guid}", async (Guid photoId, CatalogService s, CancellationToken ct) =>
                 await s.OpenPhotoForRegisterAsync(photoId, ct) is { } photo ? Results.Stream(photo.Content, photo.ContentType) : Results.NotFound())
             .WithSummary("Reference photo of an article, sent by the register to its vision service.");
+        g.MapPost("/heartbeat", async (RegisterHeartbeatDto dto, ClaimsPrincipal user, SupervisionService s, CancellationToken ct) =>
+            {
+                await s.RecordHeartbeatAsync(RegisterId(user), dto, ct);
+                return Results.NoContent();
+            })
+            .WithSummary("Register state every minute: version, queue, blocking error, open session, last local backup.");
         g.MapGet("/vision", (ClaimsPrincipal user, VisionModelService s, CancellationToken ct) => s.GetRegisterConfigAsync(RegisterId(user), ct))
             .WithSummary("Vision settings of the register's site (provider, thresholds, model to install).");
         g.MapGet("/vision-models/{id:guid}/file", async (Guid id, ClaimsPrincipal user, VisionModelService s, CancellationToken ct) =>

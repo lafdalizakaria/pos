@@ -101,3 +101,7 @@ public sealed record RegisterVisionConfigDto(bool Configured, bool Enabled, stri
 
 /// <summary>What the register applied (or why it could not).</summary>
 public sealed record RegisterVisionReportDto(string? Provider, string? ModelVersion, bool ServiceReachable, bool ProviderReady, string? Error);
+
+/// <summary>Sent every minute by a running register (supervision).</summary>
+public sealed record RegisterHeartbeatDto(string AppVersion, int PendingCount, DateTimeOffset? OldestPendingAt, string? BlockingError,
+    long LocalLastSequence, DateTimeOffset? OpenSessionSince, DateTimeOffset? LastBackupAt);

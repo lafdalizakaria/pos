@@ -34,6 +34,7 @@ public sealed class ApiFactory(string connectionString, string storageRoot) : We
         builder.UseSetting("Authentication:Registers:SigningKey", RegisterKey);
         builder.UseSetting("Storage:RootPath", storageRoot);
         builder.UseSetting("Security:PinHashIterations", "1000");
+        builder.UseSetting("Supervision:JobsEnabled", "false");
         builder.UseSetting("Serilog:MinimumLevel:Default", "Warning");
     }
 }

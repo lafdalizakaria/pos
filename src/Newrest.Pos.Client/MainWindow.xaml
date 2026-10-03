@@ -14,6 +14,7 @@
           <Button Style="{StaticResource NavButton}" Content="Historique" Command="{Binding ShowHistoryCommand}" />
           <Button Style="{StaticResource NavButton}" Content="Recharge / solde" Command="{Binding ShowTopUpCommand}" />
           <Button Style="{StaticResource NavButton}" Content="Clôture" Command="{Binding ShowCloseCommand}" />
+          <Button Style="{StaticResource NavButton}" Content="Responsable" Command="{Binding ShowSupervisorCommand}" />
           <Button Style="{StaticResource NavButton}" Content="Synchroniser" Command="{Binding SyncNowCommand}" />
           <Button Style="{StaticResource NavButton}" Content="Déconnexion" Command="{Binding LogoutCommand}" />
         </StackPanel>

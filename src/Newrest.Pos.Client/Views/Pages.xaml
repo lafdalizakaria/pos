@@ -283,9 +283,42 @@
         </StackPanel>
         <ContentControl Content="{Binding}" ContentTemplate="{StaticResource Feedback}" />
         <Button Style="{StaticResource PayButton}" Background="{StaticResource Danger}" Content="Clôturer et imprimer le Z" Command="{Binding CloseCommand}" />
+        <Button Style="{StaticResource SecondaryButton}" Content="Clôture forcée (responsable, caissier absent)" Command="{Binding ForceCloseCommand}"
+                Visibility="{Binding IsSupervisor, Converter={StaticResource BoolToVisibility}}" />
         <Button Style="{StaticResource SecondaryButton}" Content="Terminer" Command="{Binding FinishCommand}"
                 Visibility="{Binding Closed, Converter={StaticResource NotNullToVisibility}}" />
       </StackPanel>
+    </Border>
+  </DataTemplate>
+
+  <!-- ===== Supervisor: queue, retry after refusal, backups ===== -->
+  <DataTemplate DataType="{x:Type vm:SupervisorViewModel}">
+    <Border Style="{StaticResource CardBorder}">
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Top">
+          <TextBlock Style="{StaticResource Title}" Text="Responsable" />
+          <TextBlock Text="{Binding Status.Label}" FontWeight="Bold" />
+          <TextBlock Text="{Binding VersionLine}" />
+          <TextBlock Text="{Binding BackupLine}" />
+          <StackPanel Orientation="Horizontal" Margin="0,8">
+            <Button Style="{StaticResource BigButton}" Content="Synchroniser" Command="{Binding SyncNowCommand}" />
+            <Button Style="{StaticResource BigButton}" Background="{StaticResource Danger}" Content="Relancer la file (après refus)"
+                    Command="{Binding RetryRejectedCommand}" Visibility="{Binding IsSupervisor, Converter={StaticResource BoolToVisibility}}" />
+            <Button Style="{StaticResource BigButton}" Content="Sauvegarder maintenant" Command="{Binding BackupNowCommand}" />
+          </StackPanel>
+          <ContentControl Content="{Binding}" ContentTemplate="{StaticResource Feedback}" />
+        </StackPanel>
+        <DataGrid ItemsSource="{Binding Items}" AutoGenerateColumns="False" IsReadOnly="True" RowHeight="36">
+          <DataGrid.Columns>
+            <DataGridTextColumn Header="N°" Binding="{Binding Position}" />
+            <DataGridTextColumn Header="Élément" Binding="{Binding Kind}" />
+            <DataGridTextColumn Header="État" Binding="{Binding Status}" />
+            <DataGridTextColumn Header="Essais" Binding="{Binding Attempts}" />
+            <DataGridTextColumn Header="Créé" Binding="{Binding CreatedAt, StringFormat='dd/MM HH:mm'}" />
+            <DataGridTextColumn Header="Dernière erreur" Binding="{Binding LastError}" Width="*" />
+          </DataGrid.Columns>
+        </DataGrid>
+      </DockPanel>
     </Border>
   </DataTemplate>
 </ResourceDictionary>

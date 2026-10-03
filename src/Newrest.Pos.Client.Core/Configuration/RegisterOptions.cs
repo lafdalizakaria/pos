@@ -30,4 +30,11 @@ public sealed class RegisterOptions
     public decimal DefaultOpeningFloat { get; set; } = 500m;
 
     public VisionOptions Vision { get; set; } = new();
+
+    /// <summary>Local copies of the SQLite database (also taken after each Z).</summary>
+    public TimeSpan BackupInterval { get; set; } = TimeSpan.FromHours(24);
+
+    public int BackupRetention { get; set; } = 7;
+
+    public TimeSpan HeartbeatInterval { get; set; } = TimeSpan.FromMinutes(1);
 }

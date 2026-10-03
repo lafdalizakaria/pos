@@ -30,7 +30,7 @@ public static class Outbox
 /// </summary>
 public sealed partial class SyncService(
     LocalStore store, PosApiClient api, ReferenceCache cache, ConnectivityState state, RegisterOptions options, TimeProvider clock,
-    Vision.VisionDeploymentService vision, ILogger<SyncService> logger)
+    Vision.VisionDeploymentService vision, LocalBackupService backups, ILogger<SyncService> logger)
 {
     /// <summary>Refusals that resolve themselves once earlier items arrive (or the server catches up).</summary>
     private static readonly HashSet<string> TransientCodes =
@@ -39,6 +39,12 @@ public sealed partial class SyncService(
     private readonly SemaphoreSlim _runLock = new(1, 1);
     private readonly SemaphoreSlim _wakeUp = new(0, 1);
     private DateTimeOffset _lastReferenceSync = DateTimeOffset.MinValue;
+    private DateTimeOffset _lastHeartbeat = DateTimeOffset.MinValue;
+
+    /// <summary>Version reported to the server (supervision).</summary>
+    public static string AppVersion { get; } =
+        typeof(SyncService).Assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+            .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion.Split('+')[0] ?? "0.0.0";
 
     /// <summary>Asks the background loop to run now (after a sale).</summary>
     public void Trigger()
@@ -86,6 +92,12 @@ public sealed partial class SyncService(
                 await PullReferenceAsync(ct);
                 referencePulled = true;
             }
+
+            await backups.BackupIfDueAsync(ct);
+            if (forceReference || clock.GetUtcNow() - _lastHeartbeat >= options.HeartbeatInterval)
+            {
+                await SendHeartbeatAsync(ct);
+            }
         }
         catch (ServerUnreachableException ex)
         {
@@ -102,6 +114,32 @@ public sealed partial class SyncService(
         if (referencePulled && options.Vision.ApplySiteSettings && VisionDeployment.IsCompleted)
         {
             VisionDeployment = DeployVisionAsync(ct);
+        }
+    }
+
+    /// <summary>State for the supervision (version, queue, open session, last backup). A refusal is only logged.</summary>
+    public async Task SendHeartbeatAsync(CancellationToken ct = default)
+    {
+        RegisterHeartbeatDto dto;
+        await using (var db = store.Open())
+        {
+            var pending = db.Outbox.AsNoTracking().Where(o => o.Status != OutboxStatus.Sent);
+            var registerState = await db.RegisterStates.AsNoTracking().SingleAsync(ct);
+            var openSince = await db.CashSessions.AsNoTracking().Where(s => s.Status == LocalSessionStatus.Open).Select(s => (DateTimeOffset?)s.OpenedAt)
+                .FirstOrDefaultAsync(ct);
+            var oldest = await pending.OrderBy(o => o.Position).Select(o => (DateTimeOffset?)o.CreatedAt).FirstOrDefaultAsync(ct);
+            dto = new RegisterHeartbeatDto(AppVersion, await pending.CountAsync(ct), oldest, state.BlockingError, registerState.LastSequence, openSince,
+                await backups.LastBackupAtAsync(ct));
+        }
+
+        try
+        {
+            await api.SendHeartbeatAsync(dto, ct);
+            _lastHeartbeat = clock.GetUtcNow();
+        }
+        catch (ServerRejectedException ex)
+        {
+            LogHeartbeatRejected(logger, ex.Code);
         }
     }
 
@@ -238,6 +276,9 @@ public sealed partial class SyncService(
     }
 
     private static T Deserialize<T>(OutboxItem item) => JsonSerializer.Deserialize<T>(item.PayloadJson, LocalStore.Json)!;
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Heartbeat refused by the server: {Code}")]
+    private static partial void LogHeartbeatRejected(ILogger logger, string code);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Vision deployment failed: {Reason}")]
     private static partial void LogVisionFailed(ILogger logger, string reason);

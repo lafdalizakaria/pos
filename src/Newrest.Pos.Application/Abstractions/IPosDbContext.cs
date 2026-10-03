@@ -40,6 +40,10 @@ public interface IPosDbContext
     DbSet<Domain.Vision.SiteVisionSettings> SiteVisionSettings { get; }
 
     DbSet<Domain.Vision.RegisterVisionStatus> RegisterVisionStatuses { get; }
+
+    DbSet<Domain.Operations.RegisterHeartbeat> RegisterHeartbeats { get; }
+
+    DbSet<Domain.Operations.IntegrityCheck> IntegrityChecks { get; }
     DbSet<CashSession> CashSessions { get; }
     DbSet<ZReport> ZReports { get; }
     DbSet<AuditLog> AuditLogs { get; }

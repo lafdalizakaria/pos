@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Newrest.Pos.Application.Accounts;
 using Newrest.Pos.Application.Auditing;
 using Newrest.Pos.Application.Catalog;
@@ -31,6 +32,8 @@ public static class DependencyInjection
         services.AddScoped<TicketQueryService>();
         services.AddScoped<Vision.RecognitionService>();
         services.AddScoped<Vision.VisionModelService>();
+        services.AddScoped<Operations.SupervisionService>();
+        services.TryAddSingleton(new Domain.Operations.SupervisionThresholds());
         return services;
     }
 }

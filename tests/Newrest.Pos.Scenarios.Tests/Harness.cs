@@ -32,7 +32,7 @@ public sealed class ScenarioCollection : ICollectionFixture<SqlServerFixture>
     public const string Name = SqlServerFixture.CollectionName;
 }
 
-public sealed class ApiFactory(string connectionString) : WebApplicationFactory<Program>
+public sealed class ApiFactory(string connectionString, Action<IWebHostBuilder>? configure = null) : WebApplicationFactory<Program>
 {
     public const string UserKey = "scenario-user-signing-key-0123456789-abcdef";
 
@@ -48,23 +48,26 @@ public sealed class ApiFactory(string connectionString) : WebApplicationFactory<
         builder.UseSetting("Authentication:Registers:SigningKey", "scenario-register-signing-key-0123456789-ab");
         builder.UseSetting("Storage:RootPath", StoragePath);
         builder.UseSetting("Security:PinHashIterations", "1000");
+        builder.UseSetting("Supervision:JobsEnabled", "false");
+        configure?.Invoke(builder);
         builder.UseSetting("Serilog:MinimumLevel:Default", "Warning");
     }
 
     public HttpClient Admin()
     {
         var client = CreateClient();
-        var token = new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
-        {
-            Issuer = "newrest-pos-dev",
-            Audience = "newrest-pos-api",
-            Subject = new ClaimsIdentity([new Claim("preferred_username", "admin@newrest.ma"), new Claim("roles", PosRoles.Admin)]),
-            Expires = DateTime.UtcNow.AddMinutes(30),
-            SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(Encoding.UTF8.GetBytes(UserKey)), SecurityAlgorithms.HmacSha256),
-        });
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", Token("admin@newrest.ma", PosRoles.Admin));
         return client;
     }
+
+    public static string Token(string userName, params string[] roles) => new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
+    {
+        Issuer = "newrest-pos-dev",
+        Audience = "newrest-pos-api",
+        Subject = new ClaimsIdentity([new Claim("preferred_username", userName), .. roles.Select(r => new Claim("roles", r))]),
+        Expires = DateTime.UtcNow.AddMinutes(30),
+        SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(Encoding.UTF8.GetBytes(UserKey)), SecurityAlgorithms.HmacSha256),
+    });
 }
 
 public enum NetworkMode
