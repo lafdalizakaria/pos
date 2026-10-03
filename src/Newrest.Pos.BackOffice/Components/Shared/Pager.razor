@@ -1,0 +1,17 @@
+@if (Total > PageSize)
+{
+    <div class="pager">
+        <button class="link" disabled="@(Page <= 1)" @onclick="() => OnChange.InvokeAsync(Page - 1)">‹ Précédent</button>
+        <span>Page @Page / @Pages</span>
+        <button class="link" disabled="@(Page >= Pages)" @onclick="() => OnChange.InvokeAsync(Page + 1)">Suivant ›</button>
+    </div>
+}
+
+@code {
+    [Parameter] public int Page { get; set; }
+    [Parameter] public int PageSize { get; set; }
+    [Parameter] public int Total { get; set; }
+    [Parameter] public EventCallback<int> OnChange { get; set; }
+
+    private int Pages => Math.Max(1, (Total + PageSize - 1) / PageSize);
+}

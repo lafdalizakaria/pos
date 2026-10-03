@@ -1,6 +1,21 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
 
-@Body
+<div class="shell">
+    <aside class="sidebar">
+        <div class="brand">Newrest <span>POS</span></div>
+        <NavMenu />
+    </aside>
+    <div class="content">
+        <header class="topbar">
+            <AuthorizeView>
+                <span class="user">@context.User.FindFirst("preferred_username")?.Value</span>
+                <span class="roles">@string.Join(", ", context.User.FindAll("roles").Select(r => r.Value.Replace("Pos.", "")))</span>
+                <form method="post" action="account/logout"><button class="link" type="submit">Se déconnecter</button></form>
+            </AuthorizeView>
+        </header>
+        <main>@Body</main>
+    </div>
+</div>
 
 <div id="blazor-error-ui" data-nosnippet>
     Une erreur inattendue est survenue.

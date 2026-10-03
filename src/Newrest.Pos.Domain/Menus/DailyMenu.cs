@@ -55,6 +55,25 @@ public sealed class DailyMenu : ReferenceEntity
         item.IsAvailable = isAvailable;
     }
 
+    public void RemoveItem(Guid articleId)
+    {
+        if (_items.RemoveAll(i => i.ArticleId == articleId) == 0)
+        {
+            throw new DomainException("menu_item_not_found", "The article is not on this menu.");
+        }
+    }
+
+    public void SetItemPrice(Guid articleId, decimal effectivePrice)
+    {
+        var item = _items.FirstOrDefault(i => i.ArticleId == articleId)
+                   ?? throw new DomainException("menu_item_not_found", "The article is not on this menu.");
+        Guard.NotNegative(effectivePrice, nameof(effectivePrice));
+        item.EffectivePrice = Money.EnsureValid(effectivePrice, nameof(effectivePrice));
+    }
+
+    /// <summary>Takes the menu back to draft (e.g. to rework tomorrow's menu); registers stop receiving it.</summary>
+    public void Unpublish() => IsPublished = false;
+
     public void Publish()
     {
         if (_items.Count == 0)
@@ -97,7 +116,7 @@ public sealed class DailyMenuItem : Entity
     public Guid ArticleId { get; private set; }
 
     /// <summary>Price frozen when the menu is built (resolved from price lists), TTC.</summary>
-    public decimal EffectivePrice { get; private set; }
+    public decimal EffectivePrice { get; internal set; }
 
     public bool IsAvailable { get; set; }
     public int DisplayOrder { get; set; }

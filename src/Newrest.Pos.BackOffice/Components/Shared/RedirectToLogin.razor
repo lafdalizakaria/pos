@@ -1,0 +1,10 @@
+@inject NavigationManager Navigation
+@inject Newrest.Pos.BackOffice.Security.BackOfficeAuthOptions AuthOptions
+
+@code {
+    protected override void OnInitialized()
+    {
+        var login = string.IsNullOrWhiteSpace(AuthOptions.Authority) ? "account/dev-login" : "account/login";
+        Navigation.NavigateTo($"{login}?returnUrl=/{Uri.EscapeDataString(Navigation.ToBaseRelativePath(Navigation.Uri))}", forceLoad: true);
+    }
+}

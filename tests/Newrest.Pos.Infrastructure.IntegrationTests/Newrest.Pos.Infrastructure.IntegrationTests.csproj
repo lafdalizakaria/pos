@@ -9,13 +9,13 @@
     <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="coverlet.collector" PrivateAssets="all" />
-    <PackageReference Include="Testcontainers.MsSql" />
+
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />
     <Using Include="FluentAssertions" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="../../src/Newrest.Pos.Infrastructure/Newrest.Pos.Infrastructure.csproj" />
+    <ProjectReference Include="../Newrest.Pos.Testing/Newrest.Pos.Testing.csproj" />
   </ItemGroup>
 </Project>

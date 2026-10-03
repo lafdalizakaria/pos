@@ -5,6 +5,7 @@ using Newrest.Pos.Domain.Menus;
 using Newrest.Pos.Domain.Sales;
 using Newrest.Pos.Infrastructure.Persistence.Interceptors;
 using Newrest.Pos.Infrastructure.Seeding;
+using Newrest.Pos.Testing;
 
 namespace Newrest.Pos.Infrastructure.IntegrationTests;
 

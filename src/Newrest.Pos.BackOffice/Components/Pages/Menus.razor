@@ -1,0 +1,216 @@
+@page "/menus"
+@inherits PageBase
+
+<PageTitle>Menus du jour - Newrest POS</PageTitle>
+<h1>Menus du jour</h1>
+<Notice Error="@Error" Success="@Success" />
+
+<div class="toolbar">
+    <label>Point de vente
+        <select @bind="PointOfSaleId" @bind:after="LoadWeekAsync">
+            @foreach (var p in _pointsOfSale) { <option value="@p.Id">@p.Name</option> }
+        </select>
+    </label>
+    <button class="link" @onclick="() => MoveWeekAsync(-7)">‹ Semaine précédente</button>
+    <strong>Semaine du @Messages.Date(_weekStart)</strong>
+    <button class="link" @onclick="() => MoveWeekAsync(7)">Semaine suivante ›</button>
+    @if (CanWrite && _week.Count > 0)
+    {
+        <button class="secondary" disabled="@Busy" @onclick="CopyWeekAsync">Copier cette semaine sur la suivante</button>
+    }
+</div>
+
+<div class="week">
+    @for (var i = 0; i < 7; i++)
+    {
+        var day = _weekStart.AddDays(i);
+        <div class="day @(day == _today ? "today" : null)">
+            <h3>@day.ToString("dddd dd/MM", System.Globalization.CultureInfo.GetCultureInfo("fr-MA"))</h3>
+            @foreach (var m in _week.Where(m => m.Date == day))
+            {
+                <button class="menu-chip @(m.Id == _selected?.Id ? "selected" : null)" @onclick="() => _selected = m">
+                    @ServiceLabel(m.Service) · @m.Items.Count art. · @(m.IsPublished ? "publié" : "brouillon")
+                </button>
+            }
+            @if (CanWrite)
+            {
+                <button class="link" @onclick="() => CreateAsync(day)">+ @ServiceLabel(_newService)</button>
+            }
+        </div>
+    }
+</div>
+@if (CanWrite)
+{
+    <label class="inline">Service des nouveaux menus
+        <select @bind="_newService">
+            <option value="Lunch">Midi</option><option value="Dinner">Soir</option><option value="Breakfast">Petit-déjeuner</option><option value="AllDay">Journée</option>
+        </select>
+    </label>
+}
+
+@if (_selected is not null)
+{
+    <section class="card">
+        <h2>@ServiceLabel(_selected.Service) du @Messages.Date(_selected.Date) — @(_selected.IsPublished ? "publié" : "brouillon")</h2>
+        <table>
+            <thead><tr><th>Article</th><th class="num">Prix TTC</th><th>Disponible</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var item in _selected.Items)
+                {
+                    <tr>
+                        <td><code>@item.ArticleCode</code> @item.ArticleName</td>
+                        <td class="num">
+                            @if (CanWrite) { <input class="price" type="number" step="0.01" min="0" value="@item.EffectivePrice.ToString(System.Globalization.CultureInfo.InvariantCulture)" @onchange="e => UpdateItemAsync(item, Parse(e.Value, item.EffectivePrice), item.IsAvailable)" /> }
+                            else { @Messages.Mad(item.EffectivePrice) }
+                        </td>
+                        <td><input type="checkbox" checked="@item.IsAvailable" disabled="@(!CanWrite)" @onchange="e => UpdateItemAsync(item, item.EffectivePrice, (bool)e.Value!)" /></td>
+                        <td class="actions">@if (CanWrite) { <button class="link danger" @onclick="() => RemoveItemAsync(item)">Retirer</button> }</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (CanWrite)
+        {
+            <div class="form">
+                <label>Ajouter un article
+                    <select @bind="_articleId">
+                        @foreach (var a in _articles.Where(a => _selected.Items.All(i => i.ArticleId != a.Id))) { <option value="@a.Id">@a.Code — @a.Name</option> }
+                    </select>
+                </label>
+                <label>Prix (vide = prix du tarif)<input type="number" step="0.01" min="0" @bind="_itemPrice" /></label>
+            </div>
+            <div class="buttons">
+                <button class="secondary" disabled="@Busy" @onclick="AddItemAsync">Ajouter</button>
+                @if (_selected.IsPublished)
+                {
+                    <button class="secondary" disabled="@Busy" @onclick="() => PublishAsync(false)">Dépublier</button>
+                }
+                else
+                {
+                    <button class="primary" disabled="@Busy" @onclick="() => PublishAsync(true)">Publier vers les caisses</button>
+                    <button class="link danger" disabled="@Busy" @onclick="DeleteAsync">Supprimer le brouillon</button>
+                }
+                <button class="secondary" disabled="@Busy" @onclick="CopyToNextDayAsync">Copier sur le lendemain</button>
+            </div>
+        }
+    </section>
+}
+
+@code {
+    private IReadOnlyList<PointOfSaleDto> _pointsOfSale = [];
+    private IReadOnlyList<ArticleDto> _articles = [];
+    private IReadOnlyList<DailyMenuDto> _week = [];
+    private DailyMenuDto? _selected;
+    private readonly DateOnly _today = DateOnly.FromDateTime(DateTime.Today);
+    private DateOnly _weekStart;
+    private string _newService = "Lunch";
+    private Guid _articleId;
+    private decimal? _itemPrice;
+
+    private Guid PointOfSaleId { get; set; }
+
+    protected override async Task LoadAsync()
+    {
+        _weekStart = _today.AddDays(-(((int)_today.DayOfWeek + 6) % 7));
+        _pointsOfSale = await Run<OrganizationService, IReadOnlyList<PointOfSaleDto>>(s => s.ListPointsOfSaleAsync()) ?? [];
+        _articles = (await Run<CatalogService, PagedResult<ArticleDto>>(s => s.ListArticlesAsync(null, null, true, 1, 200)))?.Items ?? [];
+        if (_pointsOfSale.Count > 0)
+        {
+            PointOfSaleId = _pointsOfSale[0].Id;
+            await LoadWeekAsync();
+        }
+    }
+
+    private async Task LoadWeekAsync()
+    {
+        var pos = PointOfSaleId;
+        _week = await Run<MenuService, IReadOnlyList<DailyMenuDto>>(s => s.ListAsync(pos, _weekStart, _weekStart.AddDays(6))) ?? [];
+        _selected = _selected is null ? null : _week.FirstOrDefault(m => m.Id == _selected.Id);
+        _articleId = _articles.FirstOrDefault()?.Id ?? Guid.Empty;
+    }
+
+    private async Task MoveWeekAsync(int days)
+    {
+        _weekStart = _weekStart.AddDays(days);
+        _selected = null;
+        await LoadWeekAsync();
+    }
+
+    private static string ServiceLabel(string service) => service switch
+    {
+        "Lunch" => "Midi", "Dinner" => "Soir", "Breakfast" => "Petit-déj.", _ => "Journée",
+    };
+
+    private static decimal Parse(object? value, decimal fallback) =>
+        decimal.TryParse(value?.ToString(), System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : fallback;
+
+    private async Task CreateAsync(DateOnly day)
+    {
+        var request = new DailyMenuCreate(PointOfSaleId, day, _newService, null);
+        _selected = await Run<MenuService, DailyMenuDto>(s => s.CreateAsync(request), "Menu créé (brouillon).") ?? _selected;
+        await LoadWeekAsync();
+    }
+
+    private async Task AfterChangeAsync(DailyMenuDto? updated)
+    {
+        if (updated is not null)
+        {
+            _selected = updated;
+        }
+
+        await LoadWeekAsync();
+    }
+
+    private async Task AddItemAsync()
+    {
+        var id = _selected!.Id;
+        await AfterChangeAsync(await Run<MenuService, DailyMenuDto>(s => s.AddItemAsync(id, new MenuItemAdd(_articleId, _itemPrice))));
+        _itemPrice = null;
+    }
+
+    private async Task UpdateItemAsync(DailyMenuItemDto item, decimal price, bool available)
+    {
+        var id = _selected!.Id;
+        await AfterChangeAsync(await Run<MenuService, DailyMenuDto>(s => s.UpdateItemAsync(id, item.ArticleId, new MenuItemUpdate(price, available))));
+    }
+
+    private async Task RemoveItemAsync(DailyMenuItemDto item)
+    {
+        var id = _selected!.Id;
+        await AfterChangeAsync(await Run<MenuService, DailyMenuDto>(s => s.RemoveItemAsync(id, item.ArticleId)));
+    }
+
+    private async Task PublishAsync(bool publish)
+    {
+        var id = _selected!.Id;
+        await AfterChangeAsync(await Run<MenuService, DailyMenuDto>(s => s.SetPublishedAsync(id, publish),
+            publish ? "Menu publié : il sera envoyé aux caisses." : "Menu dépublié."));
+    }
+
+    private async Task DeleteAsync()
+    {
+        var id = _selected!.Id;
+        if (await Run<MenuService>(s => s.DeleteAsync(id), "Brouillon supprimé."))
+        {
+            _selected = null;
+            await LoadWeekAsync();
+        }
+    }
+
+    private async Task CopyToNextDayAsync()
+    {
+        var menu = _selected!;
+        var result = await Run<MenuService, MenuCopyResult>(s => s.CopyAsync(menu.Id, new MenuCopyRequest([menu.Date.AddDays(1)], null)));
+        Success = result is null ? null : result.Created == 1 ? "Menu copié sur le lendemain (brouillon)." : "Un menu existe déjà le lendemain : rien n'a été copié.";
+        await LoadWeekAsync();
+    }
+
+    private async Task CopyWeekAsync()
+    {
+        var result = await Run<MenuService, MenuCopyResult>(s => s.CopyWeekAsync(new MenuWeekCopyRequest(PointOfSaleId, _weekStart, _weekStart.AddDays(7))));
+        if (result is not null)
+        {
+            Success = $"{result.Created} menu(s) copié(s) sur la semaine suivante, {result.Skipped} déjà existant(s).";
+        }
+    }
+}

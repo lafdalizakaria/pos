@@ -57,6 +57,8 @@ public sealed class PriceList : ReferenceEntity
         && (SiteId is null || SiteId == context.SiteId)
         && (PointOfSaleId is null || PointOfSaleId == context.PointOfSaleId);
 
+    public bool RemovePrice(Guid articleId) => _overrides.RemoveAll(o => o.ArticleId == articleId) > 0;
+
     public PriceOverride SetPrice(Guid articleId, decimal price)
     {
         Guard.NotNegative(price, nameof(price));

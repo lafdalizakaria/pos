@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Newrest.Pos.Application.Abstractions;
 using Newrest.Pos.Domain.Accounts;
 using Newrest.Pos.Domain.Audit;
 using Newrest.Pos.Domain.Catalog;
@@ -7,11 +8,12 @@ using Newrest.Pos.Domain.Common;
 using Newrest.Pos.Domain.Menus;
 using Newrest.Pos.Domain.Organization;
 using Newrest.Pos.Domain.Sales;
+using Newrest.Pos.Domain.Security;
 using Newrest.Pos.Domain.Vision;
 
 namespace Newrest.Pos.Infrastructure.Persistence;
 
-public sealed class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(options)
+public sealed class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(options), IPosDbContext
 {
     public const string Schema = "pos";
 
@@ -20,6 +22,7 @@ public sealed class PosDbContext(DbContextOptions<PosDbContext> options) : DbCon
     public DbSet<PointOfSale> PointsOfSale => Set<PointOfSale>();
     public DbSet<Register> Registers => Set<Register>();
     public DbSet<Operator> Operators => Set<Operator>();
+    public DbSet<UserAccessScope> UserAccessScopes => Set<UserAccessScope>();
 
     public DbSet<Category> Categories => Set<Category>();
     public DbSet<Article> Articles => Set<Article>();

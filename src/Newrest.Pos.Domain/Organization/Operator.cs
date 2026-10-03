@@ -47,7 +47,7 @@ public sealed class Operator : ReferenceEntity
     public string Code { get; private set; } = null!;
     public string FirstName { get; private set; } = null!;
     public string LastName { get; private set; } = null!;
-    public OperatorRoles Roles { get; set; }
+    public OperatorRoles Roles { get; private set; }
     public string PinHash { get; private set; } = null!;
     public int FailedPinAttempts { get; private set; }
     public DateTimeOffset? LockedUntil { get; private set; }
@@ -99,6 +99,15 @@ public sealed class Operator : ReferenceEntity
         FailedPinAttempts = 0;
         LockedUntil = null;
     }
+
+    public void Rename(string firstName, string lastName)
+    {
+        FirstName = Guard.NotBlank(firstName, nameof(firstName), 100);
+        LastName = Guard.NotBlank(lastName, nameof(lastName), 100);
+    }
+
+    public void SetRoles(OperatorRoles roles) =>
+        Roles = roles == OperatorRoles.None ? throw new DomainException("role_required", "An operator needs at least one role.") : roles;
 
     public void Unlock()
     {

@@ -1,0 +1,194 @@
+@page "/articles"
+@inherits PageBase
+
+<PageTitle>Articles - Newrest POS</PageTitle>
+<h1>Catalogue maître — articles</h1>
+<Notice Error="@Error" Success="@Success" />
+
+<div class="toolbar">
+    <input placeholder="Rechercher (code, libellé)" @bind="_search" @bind:event="oninput" @bind:after="SearchAsync" />
+    <select @bind="_categoryFilter" @bind:after="SearchAsync">
+        <option value="">Toutes catégories</option>
+        @foreach (var c in _categories) { <option value="@c.Id">@c.Name</option> }
+    </select>
+    <span class="muted">@_page.TotalCount article(s)</span>
+</div>
+
+<div class="grid-2">
+    <section class="card">
+        <table>
+            <thead><tr><th>Code</th><th>Libellé</th><th>Catégorie</th><th class="num">Prix TTC</th><th class="num">TVA</th><th>Subv.</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var a in _page.Items)
+                {
+                    <tr class="@(a.Id == _id ? "selected" : null) @(a.IsActive ? null : "inactive")">
+                        <td><code>@a.Code</code></td><td>@a.Name</td><td>@CategoryName(a.CategoryId)</td>
+                        <td class="num">@Messages.Mad(a.BasePrice)</td><td class="num">@Messages.Percent(a.VatRate)</td>
+                        <td>@(a.IsSubsidizable ? "Oui" : "Non")</td>
+                        <td class="actions"><button class="link" @onclick="() => Edit(a)">@(IsAdmin ? "Modifier" : "Voir")</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <Pager Page="_pageNumber" PageSize="PageSize" Total="_page.TotalCount" OnChange="GoToAsync" />
+    </section>
+
+    <section class="card">
+        <h2>@(_id is null ? "Nouvel article" : $"Article {_form.Code}")</h2>
+        <fieldset disabled="@(!IsAdmin)">
+            <div class="form">
+                <label>Code<input @bind="_form.Code" disabled="@(_id is not null)" /></label>
+                <label>Libellé<input @bind="_form.Name" /></label>
+                <label>Libellé ticket<input @bind="_form.ReceiptLabel" maxlength="40" /></label>
+                <label>Catégorie
+                    <select @bind="_form.CategoryId">
+                        @foreach (var c in _categories) { <option value="@c.Id">@c.Name</option> }
+                    </select>
+                </label>
+                <label>Prix de base TTC (MAD)<input type="number" step="0.01" min="0" @bind="_form.BasePrice" /></label>
+                <label>TVA (%)<input type="number" step="0.01" min="0" max="99" @bind="_form.VatPercent" /></label>
+                <label class="wide">Description visuelle (pour la reconnaissance)<textarea rows="3" @bind="_form.VisualDescription"></textarea></label>
+                <label class="check"><input type="checkbox" @bind="_form.IsSubsidizable" /> Subventionnable</label>
+                <label class="check"><input type="checkbox" @bind="_form.IsActive" /> Actif</label>
+            </div>
+        </fieldset>
+        @if (IsAdmin)
+        {
+            <p class="hint">Toute modification de prix ou de TVA est tracée dans le journal d'audit.</p>
+            <button class="primary" disabled="@Busy" @onclick="SaveAsync">Enregistrer</button>
+            <button class="link" @onclick="New">Nouvel article</button>
+        }
+
+        @if (_id is { } articleId)
+        {
+            <h3>Photos de référence</h3>
+            <div class="photos">
+                @foreach (var p in _photos)
+                {
+                    <figure>
+                        <img src="photos/@p.Id" alt="@p.Caption" />
+                        <figcaption>@p.Caption @if (IsAdmin) { <button class="link danger" @onclick="() => DeletePhotoAsync(articleId, p)">Supprimer</button> }</figcaption>
+                    </figure>
+                }
+            </div>
+            @if (IsAdmin)
+            {
+                <label>Ajouter une photo (JPEG, PNG, WebP — 5 Mo max)
+                    <InputFile accept=".jpg,.jpeg,.png,.webp" OnChange="UploadAsync" />
+                </label>
+            }
+        }
+    </section>
+</div>
+
+@code {
+    private const int PageSize = 25;
+    private PagedResult<ArticleDto> _page = new([], 0, 1, PageSize);
+    private IReadOnlyList<CategoryDto> _categories = [];
+    private IReadOnlyList<ArticlePhotoDto> _photos = [];
+    private string? _search;
+    private Guid? _categoryFilter;
+    private int _pageNumber = 1;
+    private Guid? _id;
+    private ArticleForm _form = new();
+
+    protected override async Task LoadAsync()
+    {
+        _categories = await Run<CatalogService, IReadOnlyList<CategoryDto>>(s => s.ListCategoriesAsync()) ?? [];
+        New();
+        await SearchAsync();
+    }
+
+    private async Task SearchAsync()
+    {
+        _pageNumber = 1;
+        await GoToAsync(1);
+    }
+
+    private async Task GoToAsync(int page)
+    {
+        _pageNumber = page;
+        _page = await Run<CatalogService, PagedResult<ArticleDto>>(s => s.ListArticlesAsync(_search, _categoryFilter, null, page, PageSize)) ?? _page;
+    }
+
+    private string CategoryName(Guid id) => _categories.FirstOrDefault(c => c.Id == id)?.Name ?? "?";
+
+    private void New()
+    {
+        (_id, _photos) = (null, []);
+        _form = new ArticleForm { CategoryId = _categories.FirstOrDefault()?.Id ?? Guid.Empty };
+    }
+
+    private void Edit(ArticleDto a)
+    {
+        (_id, _photos) = (a.Id, a.Photos);
+        _form = new ArticleForm
+        {
+            Code = a.Code, Name = a.Name, ReceiptLabel = a.ReceiptLabel, CategoryId = a.CategoryId, BasePrice = a.BasePrice,
+            VatPercent = a.VatRate * 100, VisualDescription = a.VisualDescription, IsSubsidizable = a.IsSubsidizable, IsActive = a.IsActive,
+        };
+    }
+
+    private async Task SaveAsync()
+    {
+        var request = new ArticleUpsert(_form.Code, _form.Name, _form.ReceiptLabel, _form.CategoryId, _form.BasePrice, _form.VatPercent / 100m,
+            _form.VisualDescription, _form.IsSubsidizable, _form.IsActive);
+        var id = _id;
+        var saved = await Run<CatalogService, ArticleDto>(s => id is { } e ? s.UpdateArticleAsync(e, request) : s.CreateArticleAsync(request),
+            "Article enregistré.");
+        if (saved is not null)
+        {
+            Edit(saved);
+            await GoToAsync(_pageNumber);
+        }
+    }
+
+    private async Task UploadAsync(InputFileChangeEventArgs e)
+    {
+        if (_id is not { } id)
+        {
+            return;
+        }
+
+        using var buffer = new MemoryStream();
+        try
+        {
+            await e.File.OpenReadStream(CatalogService.MaxPhotoBytes).CopyToAsync(buffer);
+        }
+        catch (IOException)
+        {
+            Error = "Fichier trop volumineux (5 Mo maximum).";
+            return;
+        }
+
+        buffer.Position = 0;
+        if (await Run<CatalogService, ArticlePhotoDto>(s => s.AddPhotoAsync(id, e.File.Name, buffer, buffer.Length, null), "Photo ajoutée.") is not null)
+        {
+            await RefreshPhotosAsync(id);
+        }
+    }
+
+    private async Task DeletePhotoAsync(Guid articleId, ArticlePhotoDto photo)
+    {
+        if (await Run<CatalogService>(s => s.DeletePhotoAsync(articleId, photo.Id), "Photo supprimée."))
+        {
+            await RefreshPhotosAsync(articleId);
+        }
+    }
+
+    private async Task RefreshPhotosAsync(Guid id) =>
+        _photos = (await Run<CatalogService, ArticleDto>(s => s.GetArticleAsync(id)))?.Photos ?? _photos;
+
+    private sealed class ArticleForm
+    {
+        public string Code { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string? ReceiptLabel { get; set; }
+        public Guid CategoryId { get; set; }
+        public decimal BasePrice { get; set; }
+        public decimal VatPercent { get; set; } = 10m;
+        public string? VisualDescription { get; set; }
+        public bool IsSubsidizable { get; set; } = true;
+        public bool IsActive { get; set; } = true;
+    }
+}

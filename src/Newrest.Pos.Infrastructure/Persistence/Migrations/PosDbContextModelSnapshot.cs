@@ -993,6 +993,9 @@ namespace Newrest.Pos.Infrastructure.Persistence.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<DateTimeOffset?>("DeviceKeyIssuedAt")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
@@ -1518,6 +1521,35 @@ namespace Newrest.Pos.Infrastructure.Persistence.Migrations
                     b.ToTable("ZReportLines", "pos");
                 });
 
+            modelBuilder.Entity("Newrest.Pos.Domain.Security.UserAccessScope", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("SiteId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("UserName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId");
+
+                    b.HasIndex("SiteId");
+
+                    b.HasIndex("UserName", "CompanyId", "SiteId")
+                        .IsUnique()
+                        .HasFilter("[SiteId] IS NOT NULL");
+
+                    b.ToTable("UserAccessScopes", "pos");
+                });
+
             modelBuilder.Entity("Newrest.Pos.Domain.Vision.RecognitionLog", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1902,6 +1934,19 @@ namespace Newrest.Pos.Infrastructure.Persistence.Migrations
                         .HasForeignKey("ZReportId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("Newrest.Pos.Domain.Security.UserAccessScope", b =>
+                {
+                    b.HasOne("Newrest.Pos.Domain.Organization.Company", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Newrest.Pos.Domain.Organization.Site", null)
+                        .WithMany()
+                        .HasForeignKey("SiteId");
                 });
 
             modelBuilder.Entity("Newrest.Pos.Domain.Vision.RecognitionLog", b =>

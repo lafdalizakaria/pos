@@ -1,4 +1,5 @@
 using Newrest.Pos.Domain.Accounts;
+using Newrest.Pos.Domain.Audit;
 
 namespace Newrest.Pos.Application.Accounts;
 
@@ -11,11 +12,12 @@ public interface IAccountLedger
     /// <exception cref="InsufficientFundsException">The debit exceeds balance + overdraft.</exception>
     /// <exception cref="AccountNotFoundException">Unknown account.</exception>
     /// <exception cref="IdempotencyConflictException">The key was already used for a different movement.</exception>
-    Task<LedgerPostResult> PostAsync(Guid accountId, MovementRequest request, CancellationToken cancellationToken = default);
+    /// <param name="audit">Optional audit entry committed in the same transaction as the movement (not written on replays).</param>
+    Task<LedgerPostResult> PostAsync(Guid accountId, MovementRequest request, AuditLog? audit = null, CancellationToken cancellationToken = default);
 
     /// <summary>Cancels a movement with an opposite correction. Fails if it was already reversed.</summary>
     Task<LedgerPostResult> ReverseAsync(Guid movementId, Guid idempotencyKey, string performedBy, string reason,
-        CancellationToken cancellationToken = default);
+        AuditLog? audit = null, CancellationToken cancellationToken = default);
 
     Task<AccountBalance> GetBalanceAsync(Guid accountId, CancellationToken cancellationToken = default);
 

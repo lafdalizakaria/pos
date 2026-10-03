@@ -1,11 +1,13 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Newrest.Pos.Application.Abstractions;
 using Newrest.Pos.Application.Accounts;
 using Newrest.Pos.Domain.Security;
 using Newrest.Pos.Infrastructure.Accounts;
 using Newrest.Pos.Infrastructure.Persistence;
 using Newrest.Pos.Infrastructure.Persistence.Interceptors;
+using Newrest.Pos.Infrastructure.Storage;
 
 namespace Newrest.Pos.Infrastructure;
 
@@ -23,7 +25,10 @@ public static class DependencyInjection
         services.AddSingleton<PosSaveChangesInterceptor>();
         services.AddDbContext<PosDbContext>((sp, options) => ConfigureDbContext(options, connectionString)
             .AddInterceptors(sp.GetRequiredService<PosSaveChangesInterceptor>()));
+        services.AddScoped<IPosDbContext>(sp => sp.GetRequiredService<PosDbContext>());
         services.AddScoped<IAccountLedger, AccountLedger>();
+        services.Configure<FileStorageOptions>(configuration.GetSection(FileStorageOptions.Section));
+        services.AddSingleton<IFileStorage, LocalFileStorage>();
         services.AddSingleton<IPinHasher>(_ => new Pbkdf2PinHasher(
             configuration.GetValue("Security:PinHashIterations", Pbkdf2PinHasher.DefaultIterations)));
         return services;

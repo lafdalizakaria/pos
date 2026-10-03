@@ -44,11 +44,48 @@ le compte `pos_migrator` ; l'API avec `pos_api` (voir `deploy/sql/least-privileg
 
 Les PIN de démonstration sont publics : ne jamais lancer `--seed-demo` sur un environnement partagé sans les changer.
 
+## Back-office et API en local
+
+```bash
+# back-office : connexion de développement (aucun Entra ID requis)
+ASPNETCORE_ENVIRONMENT=Development dotnet run --project src/Newrest.Pos.BackOffice
+# API : la clé de signature des jetons caisse est générée à la volée en Development (jetons perdus au redémarrage)
+ASPNETCORE_ENVIRONMENT=Development dotnet run --project src/Newrest.Pos.Api
+```
+
+Sur la page de connexion de développement, saisir un UPN et cocher les rôles. Un utilisateur non administrateur doit
+recevoir un périmètre (menu **Droits d'accès**, en tant qu'administrateur).
+
+## Configuration Entra ID (production)
+
+1. **Inscription d'application « Newrest POS »** (API + back-office) : exposer une API (`api://newrest-pos`), créer les
+   rôles d'application `Pos.Admin`, `Pos.Manager`, `Pos.Accountant`, `Pos.Viewer` et les attribuer aux utilisateurs/groupes.
+2. Back-office : URI de redirection `https://<hôte>/signin-oidc`, secret client dans le coffre ;
+   `Authentication__Authority`, `Authentication__ClientId`, `Authentication__ClientSecret`.
+3. API : `Authentication__Users__Authority` (`https://login.microsoftonline.com/<tenant>/v2.0`), `Authentication__Users__Audience`.
+4. API : `Authentication__Registers__SigningKey` (≥ 32 caractères aléatoires, coffre de secrets).
+5. Donner les périmètres (société / site) dans **Droits d'accès** à chaque utilisateur non administrateur.
+
+## Ajouter une caisse
+
+1. Back-office → **Points de vente & caisses** → choisir le site et le point de vente → **Nouvelle caisse** (code,
+   nom, **préfixe de ticket unique et définitif**, ex. `CAS4`).
+2. **Émettre une clé** : la clé `nrpos_…` s'affiche **une seule fois** ; la saisir dans l'installation de la caisse (phase 3).
+3. Une clé perdue ou un poste remplacé : **Renouveler la clé** (l'ancienne cesse immédiatement de fonctionner) ou **Révoquer**.
+
+## Badge perdu
+
+Back-office → **Convives & badges** → rechercher le convive (nom, matricule ou n° de badge) → **Déclarer perdu** →
+saisir le numéro du nouveau badge. L'ancien badge est bloqué immédiatement, le solde reste sur le compte. Les caisses
+reçoivent le blocage à la prochaine synchronisation (phase 3).
+
 ## Tests
 
 ```bash
 dotnet test tests/Newrest.Pos.Domain.Tests                     # unitaires (rapides)
 dotnet test tests/Newrest.Pos.Infrastructure.IntegrationTests  # nécessite Docker (SQL Server via Testcontainers)
+dotnet test tests/Newrest.Pos.Api.Tests                         # API complète, nécessite Docker
+node tests/e2e/backoffice-smoke.mjs                             # parcours navigateur, voir tests/e2e/README.md
 ```
 
 Image SQL Server des tests surchargeable : `POS_TEST_MSSQL_IMAGE`.

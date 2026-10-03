@@ -32,6 +32,12 @@ public sealed class Company : ReferenceEntity
 
     public string? Address { get; set; }
     public bool IsActive { get; set; }
+
+    public void Update(string name, string legalName)
+    {
+        Name = Guard.NotBlank(name, nameof(name));
+        LegalName = Guard.NotBlank(legalName, nameof(legalName));
+    }
 }
 
 public sealed class Site : ReferenceEntity
@@ -59,6 +65,12 @@ public sealed class Site : ReferenceEntity
     public string TimeZone { get; set; } = "Africa/Casablanca";
 
     public bool IsActive { get; set; }
+
+    public void Update(string name, string city)
+    {
+        Name = Guard.NotBlank(name, nameof(name));
+        City = Guard.NotBlank(city, nameof(city), 100);
+    }
 }
 
 public enum PointOfSaleType
@@ -89,6 +101,8 @@ public sealed class PointOfSale : ReferenceEntity
     public string Name { get; private set; } = null!;
     public PointOfSaleType Type { get; set; }
     public bool IsActive { get; set; }
+
+    public void Rename(string name) => Name = Guard.NotBlank(name, nameof(name));
 }
 
 /// <summary>Physical register (PC + camera). Owns its gapless ticket sequence.</summary>
@@ -123,9 +137,25 @@ public sealed class Register : ReferenceEntity
     /// <summary>Last Z report number issued by this register.</summary>
     public int LastZNumber { get; set; }
 
-    /// <summary>Hash of the device API key (registration happens in phase 2).</summary>
-    public string? DeviceKeyHash { get; set; }
+    /// <summary>SHA-256 of the device API key (the key itself is shown once, never stored).</summary>
+    public string? DeviceKeyHash { get; private set; }
 
+    public DateTimeOffset? DeviceKeyIssuedAt { get; private set; }
     public DateTimeOffset? LastSeenAt { get; set; }
     public bool IsActive { get; set; }
+
+    public void Rename(string name) => Name = Guard.NotBlank(name, nameof(name));
+
+    /// <summary>Replaces the device credential; any previously issued key stops working immediately.</summary>
+    public void SetDeviceKeyHash(string keyHash, DateTimeOffset issuedAt)
+    {
+        DeviceKeyHash = Guard.NotBlank(keyHash, nameof(keyHash), 256);
+        DeviceKeyIssuedAt = issuedAt;
+    }
+
+    public void RevokeDeviceKey()
+    {
+        DeviceKeyHash = null;
+        DeviceKeyIssuedAt = null;
+    }
 }

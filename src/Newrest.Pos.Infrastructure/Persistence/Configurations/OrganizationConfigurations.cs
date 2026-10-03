@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Newrest.Pos.Domain.Organization;
+using Newrest.Pos.Domain.Security;
 
 namespace Newrest.Pos.Infrastructure.Persistence.Configurations;
 
@@ -68,5 +69,16 @@ internal sealed class OperatorConfiguration : IEntityTypeConfiguration<Operator>
         b.HasOne<Company>().WithMany().HasForeignKey(x => x.CompanyId);
         b.HasOne<Site>().WithMany().HasForeignKey(x => x.SiteId);
         b.HasIndex(x => new { x.CompanyId, x.Code }).IsUnique();
+    }
+}
+
+internal sealed class UserAccessScopeConfiguration : IEntityTypeConfiguration<UserAccessScope>
+{
+    public void Configure(EntityTypeBuilder<UserAccessScope> b)
+    {
+        b.Property(x => x.UserName).HasMaxLength(200);
+        b.HasOne<Company>().WithMany().HasForeignKey(x => x.CompanyId);
+        b.HasOne<Site>().WithMany().HasForeignKey(x => x.SiteId);
+        b.HasIndex(x => new { x.UserName, x.CompanyId, x.SiteId }).IsUnique();
     }
 }

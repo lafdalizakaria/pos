@@ -35,3 +35,26 @@ contraire et doivent être confirmées par le métier (M), la finance / l'expert
 | A28 | Suppressions | Aucune suppression en cascade sur les données métier, sauf enfants d'agrégats modifiables (photos, surcharges de prix, lignes de menu, points de vente d'un contrat) | `PosDbContext` | D |
 | A29 | FluentAssertions | Version 7.x (licence Apache 2.0). La v8+ exige une licence commerciale Xceed pour un usage en entreprise | `Directory.Packages.props` | D |
 | A30 | Données de démonstration | Sociétés NFMS et NMS, clients **fictifs** (Atlas Automotive, Sahara Aero), PIN démo `1234` (caissier) / `5678` (responsable) ; refusées en Production | `DemoDataSeeder`, Migrator | — |
+
+## Phase 2 — API centrale et back-office
+
+| # | Sujet | Hypothèse retenue | Où | À valider |
+|---|---|---|---|---|
+| A31 | Rôles back-office | Rôles d'application Entra ID : `Pos.Admin` (global), `Pos.Manager` (gestion dans son périmètre), `Pos.Accountant` (finance : corrections, contre-passations, remboursements, audit), `Pos.Viewer` (lecture) | `PosRoles` | M/D |
+| A32 | Périmètres | Rôles portés par Entra ID, **périmètres** (société entière ou site) gérés dans le back-office par les administrateurs (`UserAccessScopes`, par UPN). Un administrateur est global | `AccessControl` | D |
+| A33 | Cloisonnement des clients | Clients, contrats, convives et comptes sont cloisonnés **par société** : un responsable de site voit les clients de sa société ; la gestion des clients/contrats/règles exige un périmètre société entière | `AccessControl` | M |
+| A34 | Catalogue maître | Articles et catégories : administrateurs uniquement. Les responsables agissent via les listes de prix de leur périmètre | `CatalogService` | M |
+| A35 | Code article immuable | Le code est imprimé sur les tickets et sert aux modèles de vision : il ne change jamais (créer un nouvel article) | `CatalogService` | M |
+| A36 | Préfixe caisse immuable | Le préfixe et le point de vente d'une caisse ne changent pas après création (numérotation fiscale) | `OrganizationService` | F |
+| A37 | Clé de caisse | Clé aléatoire de 256 bits (`nrpos_…`) affichée **une seule fois**, seul son SHA-256 est stocké ; renouvellement = l'ancienne clé cesse de fonctionner ; désactiver une caisse révoque sa clé | `DeviceKeys` | D |
+| A38 | Jeton caisse | JWT HS256 de 15 min (configurable 1–60) émis par l'API contre la clé ; endpoint limité à 20 requêtes/min/IP. Le certificat client (mTLS) reste possible en phase 6 | `RegisterTokenIssuer` | D |
+| A39 | Prix des menus | Le prix d'un article est **résolu à l'ajout au menu** (listes de prix) puis figé ; il reste modifiable dans le menu (audité) | `MenuService` | M |
+| A40 | Copie de menus | La copie crée des **brouillons** ; un menu existant est ignoré sauf option « écraser », et un menu publié n'est jamais écrasé | `MenuService` | M |
+| A41 | Règles de subvention | Jamais modifiées : clôture (date de fin) + nouvelle règle, car les tickets passés y font référence | `SubsidyRule.Close` | M/F |
+| A42 | Recharge | Autorisée aux responsables et à la finance (espèces, carte, virement) ; corrections, contre-passations et remboursements réservés à la finance, motif obligatoire | `AccountService` | F |
+| A43 | Annulation d'une consommation | Interdite par contre-passation : une consommation s'annule par un avoir sur le ticket (phase 3) | `AccountService` | F |
+| A44 | Remboursement au convive | Limité au solde positif du compte | `AccountService` | F |
+| A45 | Import des convives | CSV UTF-8 (`;` ou `,`) ou Excel (.xlsx, 1re feuille), en-têtes FR ou EN, 20 000 lignes max ; mise à jour par matricule ; cellule vide = champ inchangé ; une ligne en erreur est ignorée **sans modification partielle** ; mode simulation disponible ; un badge actif différent n'est jamais remplacé par l'import (utiliser « badge perdu ») | `DinerService` | M |
+| A46 | Photos de référence | JPEG/PNG/WebP, 5 Mo max, stockage disque local (`Storage:RootPath`) derrière `IFileStorage` (stockage blob possible sans changement de code) | `LocalFileStorage` | D |
+| A47 | Connexion de développement | Formulaire de connexion local (choix utilisateur/rôles) en Development uniquement ; refusé au démarrage en Production | Back-office | D |
+| A48 | Audit | Création/modification d'objets de gestion, prix, PIN (sans la valeur), clés de caisse, badges, mouvements manuels, imports, droits : acteur, date, avant/après, IP, corrélation ; écrit dans la même transaction que la modification | `AuditTrail` | F |

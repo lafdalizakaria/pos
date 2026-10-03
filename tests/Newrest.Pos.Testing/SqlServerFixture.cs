@@ -7,12 +7,15 @@ using Newrest.Pos.Infrastructure.Persistence;
 using Newrest.Pos.Infrastructure.Persistence.Interceptors;
 using Newrest.Pos.Infrastructure.Seeding;
 using Testcontainers.MsSql;
+using Xunit;
 
-namespace Newrest.Pos.Infrastructure.IntegrationTests;
+namespace Newrest.Pos.Testing;
 
 /// <summary>One SQL Server container for the whole run; each test class gets its own migrated database.</summary>
 public sealed class SqlServerFixture : IAsyncLifetime
 {
+    public const string CollectionName = "sqlserver";
+
     private readonly MsSqlContainer _container = new MsSqlBuilder(
             Environment.GetEnvironmentVariable("POS_TEST_MSSQL_IMAGE") ?? "mcr.microsoft.com/mssql/server:2022-latest")
         .Build();
@@ -37,12 +40,6 @@ public sealed class SqlServerFixture : IAsyncLifetime
 
         return database;
     }
-}
-
-[CollectionDefinition(Name)]
-public sealed class SqlServerCollection : ICollectionFixture<SqlServerFixture>
-{
-    public const string Name = "sqlserver";
 }
 
 public sealed class TestDatabase(string connectionString)

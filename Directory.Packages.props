@@ -14,6 +14,7 @@
     <!-- Hosting / config -->
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="$(MsExtVersion)" />
     <PackageVersion Include="Microsoft.Extensions.Options" Version="$(MsExtVersion)" />
+    <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="$(MsExtVersion)" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="$(MsExtVersion)" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Json" Version="$(MsExtVersion)" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="$(MsExtVersion)" />
@@ -29,6 +30,12 @@
     <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.19.0" />
     <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.19.1" />
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="$(MsExtVersion)" />
+    <!-- Auth / web -->
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="$(MsExtVersion)" />
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="$(MsExtVersion)" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.QuickGrid" Version="$(MsExtVersion)" />
+    <!-- Import / export -->
+    <PackageVersion Include="ClosedXML" Version="0.105.1" />
     <!-- Client -->
     <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <!-- Tests -->
@@ -39,5 +46,6 @@
     <PackageVersion Include="FluentAssertions" Version="7.2.2" />
     <PackageVersion Include="coverlet.collector" Version="10.1.0" />
     <PackageVersion Include="Testcontainers.MsSql" Version="4.15.0" />
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="$(MsExtVersion)" />
   </ItemGroup>
 </Project>

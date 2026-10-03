@@ -63,9 +63,46 @@ incrémentale (phase 3), ainsi que `CreatedAt` / `UpdatedAt`.
 Schéma `pos`, énumérations en texte, montants `decimal(18,2)`, taux `decimal(9,4)`, pas de cascade sur les données
 métier, migrations EF Core appliquées **uniquement** par `Newrest.Pos.Migrator` (jamais au démarrage de l'API).
 
+## Phase 2 — API centrale et back-office
+
+### Cas d'usage partagés
+`Newrest.Pos.Application` contient les services (`OrganizationService`, `CatalogService`, `MenuService`, `ClientService`,
+`DinerService`, `AccountService`, `AuditQueryService`, `RegisterAuthService`) utilisés **à la fois** par l'API REST et
+par le back-office Blazor : une seule implémentation des règles, des droits et de l'audit. Ils travaillent sur
+`IPosDbContext` (implémenté par `PosDbContext`) et `ICurrentUser` (fourni par chaque hôte).
+
+### Authentification
+| Appelant | Mécanisme |
+|---|---|
+| Utilisateur du back-office (navigateur) | Entra ID OpenID Connect (code + PKCE) → cookie ; rôles = rôles d'application Entra (`roles`) |
+| Appel API par un utilisateur | Jeton d'accès Entra ID (JWT) validé par l'API (`Authentication:Users:Authority/Audience`) |
+| Caisse | Clé d'appareil (`nrpos_…`, SHA-256 stocké) échangée sur `POST /api/v1/auth/register-token` contre un JWT HS256 de 15 min (`register_id`, `pos_id`, `site_id`, `company_id`, rôle `Pos.Register`) |
+| Développement / tests | Connexion locale (back-office) et jetons HS256 de test (API), **refusés en Production** |
+
+L'API choisit le schéma de validation d'après l'émetteur du jeton (schéma « sélecteur »), puis valide signature,
+audience, durée de vie et algorithme dans le schéma cible.
+
+### Autorisation
+1. Politique d'endpoint : tout `/api/v1` (hors `ping` et `auth/register-token`) exige un rôle back-office.
+2. `AccessControl` (Application) : rôle requis par action + périmètre société/site (`UserAccessScopes`).
+   Lecture : périmètre ; gestion société (sites, clients, contrats, listes de prix société) : périmètre société entière ;
+   catalogue maître et droits : administrateurs.
+3. Le back-office masque les actions non autorisées, mais la vérification se fait toujours côté cas d'usage.
+
+### Back-office Blazor Server
+Rendu interactif sans pré-rendu. Chaque opération s'exécute dans **son propre scope DI** (`BackOfficeRunner`) avec
+l'identité du circuit : un `DbContext` neuf par opération (pas de contexte partagé pendant toute la durée d'un circuit).
+Les erreurs métier (`DomainException.Code`) sont traduites en messages français (`Ui/Messages.cs`).
+
+### Erreurs API
+RFC 9457 (`application/problem+json`) avec extension `code` stable : 404 `not_found`, 403 `forbidden`,
+409 (`conflict`, `idempotency_conflict`, `already_reversed`…), 422 pour les autres règles métier.
+
 ## Tests
 
 | Projet | Contenu |
 |---|---|
 | `tests/Newrest.Pos.Domain.Tests` | Subvention (plafonds repas/jour multi-sites, forfait, nb repas, sélection de règle), ledger, tickets/avoirs, chaîne, numérotation, Z, seuils vision, prix, menus, PIN/verrouillage, badges |
+| `tests/Newrest.Pos.Api.Tests` | API complète (WebApplicationFactory + SQL Server) : authentification (jetons invalides/expirés, clé de caisse, rotation, révocation, limitation de débit), périmètres et rôles, organisation, catalogue, photos, tarifs, menus (copie jour/semaine), clients, contrats, subventions, convives, badges perdus, import CSV/Excel, comptes (recharge idempotente, corrections, contre-passations, remboursements), audit |
+| `tests/e2e/backoffice-smoke.mjs` | Parcours navigateur (Playwright) du back-office, hors CI |
 | `tests/Newrest.Pos.Infrastructure.IntegrationTests` | SQL Server (Testcontainers) : migrations + seed, 50 débits concurrents, idempotence (séquentielle et concurrente), conflit de clé, contre-passation unique, rejeu hors ligne, aller-retour ticket + hash, altération SQL détectée, immutabilité, unicité séquence/session, Z persisté |

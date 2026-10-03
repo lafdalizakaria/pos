@@ -28,3 +28,6 @@ vision/runs/
 .env
 *.pfx
 *.key
+
+# Local file storage (reference photos, datasets)
+**/data/storage/

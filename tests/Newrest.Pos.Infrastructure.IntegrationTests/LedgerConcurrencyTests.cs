@@ -3,6 +3,7 @@ using Newrest.Pos.Application.Accounts;
 using Newrest.Pos.Domain.Accounts;
 using Newrest.Pos.Domain.Common;
 using Newrest.Pos.Infrastructure.Seeding;
+using Newrest.Pos.Testing;
 
 namespace Newrest.Pos.Infrastructure.IntegrationTests;
 

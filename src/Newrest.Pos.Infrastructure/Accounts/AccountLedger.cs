@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Newrest.Pos.Application.Accounts;
 using Newrest.Pos.Domain.Accounts;
+using Newrest.Pos.Domain.Audit;
 using Newrest.Pos.Infrastructure.Persistence;
 
 namespace Newrest.Pos.Infrastructure.Accounts;
@@ -18,15 +19,16 @@ public sealed partial class AccountLedger(PosDbContext db, TimeProvider clock, I
     private const int UniqueConstraintViolation = 2627;
     private const int UniqueIndexViolation = 2601;
 
-    public Task<LedgerPostResult> PostAsync(Guid accountId, MovementRequest request, CancellationToken cancellationToken = default)
+    public Task<LedgerPostResult> PostAsync(Guid accountId, MovementRequest request, AuditLog? audit = null,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
         return ExecuteLockedAsync(accountId, request.IdempotencyKey, request.Amount,
-            (account, _) => Task.FromResult(account.Post(request)), cancellationToken);
+            (account, _) => Task.FromResult(account.Post(request)), audit, cancellationToken);
     }
 
     public async Task<LedgerPostResult> ReverseAsync(Guid movementId, Guid idempotencyKey, string performedBy, string reason,
-        CancellationToken cancellationToken = default)
+        AuditLog? audit = null, CancellationToken cancellationToken = default)
     {
         var original = await db.AccountMovements.AsNoTracking().SingleOrDefaultAsync(m => m.Id == movementId, cancellationToken)
                        ?? throw new Domain.Common.DomainException("movement_not_found", $"Movement {movementId} was not found.");
@@ -39,7 +41,7 @@ public sealed partial class AccountLedger(PosDbContext db, TimeProvider clock, I
             }
 
             return account.Reverse(original, idempotencyKey, clock.GetUtcNow(), performedBy, reason);
-        }, cancellationToken);
+        }, audit, cancellationToken);
     }
 
     public async Task<AccountBalance> GetBalanceAsync(Guid accountId, CancellationToken cancellationToken = default)
@@ -69,7 +71,7 @@ public sealed partial class AccountLedger(PosDbContext db, TimeProvider clock, I
     }
 
     private async Task<LedgerPostResult> ExecuteLockedAsync(Guid accountId, Guid idempotencyKey, decimal expectedAmount,
-        Func<Account, CancellationToken, Task<AccountMovement>> createMovement, CancellationToken cancellationToken)
+        Func<Account, CancellationToken, Task<AccountMovement>> createMovement, AuditLog? audit, CancellationToken cancellationToken)
     {
         var strategy = db.Database.CreateExecutionStrategy();
         try
@@ -96,6 +98,11 @@ public sealed partial class AccountLedger(PosDbContext db, TimeProvider clock, I
 
                 var movement = await createMovement(account, ct);
                 db.AccountMovements.Add(movement);
+                if (audit is not null)
+                {
+                    db.AuditLogs.Add(audit);
+                }
+
                 await db.SaveChangesAsync(ct);
                 await transaction.CommitAsync(ct);
 

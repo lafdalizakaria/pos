@@ -1,6 +1,6 @@
 # Avancement
 
-## Phase 1 — Fondations ✅ (en attente de validation)
+## Phase 1 — Fondations ✅ (validée)
 
 ### Livré
 
@@ -76,7 +76,66 @@ Voir `docs/assumptions.md` (A1–A30) et `docs/architecture.md`. Points saillant
   le seuil de couverture 80 % lui sera appliqué dès qu'il contiendra du code.
 - Job CI Python ajouté en phase 4 avec le service vision.
 
-## Phase 2 — API centrale + back-office (à venir)
-Authentification (caisses : clé par appareil / certificat ; utilisateurs : Entra ID + rôles, JWT courts), endpoints
-catalogue, prix, menus, clients, convives (import CSV/Excel), badges, comptes (recharge, correction, remboursement),
-audit, cloisonnement par société/site, écrans Blazor correspondants, vérification de la chaîne dans le back-office.
+## Phase 2 — API centrale + back-office ✅ (en attente de validation)
+
+### Livré
+
+**Cas d'usage partagés** (`Newrest.Pos.Application`, utilisés par l'API et le back-office)
+- `AccessControl` : rôles Entra ID (`Pos.Admin`, `Pos.Manager`, `Pos.Accountant`, `Pos.Viewer`) + périmètres société/site
+  (`UserAccessScopes`, nouvelle table). `AuditTrail` : audit dans la même transaction que la modification.
+- Organisation : sociétés, sites, points de vente, caisses (préfixe immuable, **clé d'appareil** affichée une fois,
+  rotation, révocation), opérateurs (PIN haché, rôles, déverrouillage), droits d'accès.
+- Catalogue : catégories, articles (code immuable, prix/TVA audités), **photos de référence** (JPEG/PNG/WebP, 5 Mo,
+  `IFileStorage` sur disque), listes de prix par société / site / point de vente, prix effectifs d'un point de vente.
+- Menus du jour : création avec prix résolus, ajout/retrait/prix/disponibilité, publication, **copie vers d'autres dates**
+  et **copie de semaine type**.
+- Clients : clients B2B, contrats (points de vente acceptés), règles de subvention (création, clôture — jamais modifiées).
+- Convives : fiche, badges (attribution, **badge perdu → remplacement**, blocage), recherche par badge, **import CSV / Excel**
+  (simulation, rapport d'erreurs par ligne, aucune modification partielle d'une ligne rejetée).
+- Comptes : liste, solde, paramètres (type, découvert), historique paginé, **recharge** (idempotente), **correction**,
+  **contre-passation**, **remboursement** — tous via le ledger verrouillé et audités.
+- Journal d'audit consultable (finance / administrateurs, filtré par périmètre).
+
+**API REST** `/api/v1` : 83 endpoints, OpenAPI, ProblemDetails avec `code` stable, authentification Entra ID (JWT) pour
+les utilisateurs et **jetons caisse** (clé d'appareil → JWT 15 min, limitation 20 req/min/IP), sélection du schéma
+par émetteur.
+
+**Back-office Blazor Server** (français, mise en page prête pour le RTL) : 13 écrans — accueil, sociétés & sites,
+points de vente & caisses, opérateurs, articles (photos), catégories, tarifs, menus (vue semaine), clients & contrats &
+subventions, convives & badges & import, comptes & opérations, journal d'audit, droits d'accès. Connexion Entra ID
+(OpenID Connect) ou connexion de développement (refusée en Production). Chaque opération utilise un `DbContext` neuf.
+
+### Vérifications effectuées
+
+| Vérification | Résultat |
+|---|---|
+| Build complet Release, avertissements = erreurs, `dotnet format` | ✅ |
+| Modèle EF ↔ migrations (nouvelle migration `AddUserAccessScopesAndDeviceKeys`) | ✅ |
+| Tests unitaires Domain | ✅ 103/103 |
+| Tests d'intégration SQL Server | ✅ 13/13 |
+| Tests API (WebApplicationFactory + SQL Server 2022) | ✅ 24/24 — jetons absents/forgés/expirés, utilisateur sans rôle, clé caisse (échange, rotation, révocation, autre caisse), limitation de débit, cloisonnement site/société, rôles en écriture, organisation, opérateurs (PIN jamais audité), catalogue + audit des prix, photos, tarifs, menus (copie jour/semaine/écrasement), contrats, subventions, badges perdus, import CSV (dont champs entre guillemets) et Excel, recharge idempotente, conflit de clé, corrections/contre-passations/remboursements |
+| Couverture lignes | ✅ Domain 90,3 %, Application 94,1 % (seuils CI 80 % chacun) |
+| Parcours navigateur réel (Playwright, `tests/e2e`) sur SQL Server + back-office lancé | ✅ 24/24 : toutes les pages, clé de caisse, recharge, création de menu et ajout d'article, modification de prix, badge perdu, upload de photo, import CSV avec erreur de ligne, responsable de site limité à son site, refus de l'audit |
+| Connexion Entra ID réelle | ⚠️ non testée (aucun tenant disponible) : configuration documentée dans `docs/runbook.md`, à valider avec la DSI |
+
+Bugs trouvés et corrigés pendant la vérification : message de confirmation effacé après rechargement, page « accès
+refusé » manquante (404), prix des menus non affichés (virgule décimale dans un champ numérique), type MIME des photos,
+modification partielle possible sur une ligne d'import rejetée, dépendance du migrateur aux services applicatifs.
+
+### Décisions prises
+Voir `docs/assumptions.md` A31–A48. Points saillants :
+- Rôles dans Entra ID, **périmètres dans l'application** (administrables sans DSI) ; clients/convives/comptes cloisonnés par société.
+- Le back-office appelle directement les cas d'usage (même processus) au lieu de l'API HTTP : une seule implémentation
+  des droits et de l'audit, pas de double authentification.
+- Une consommation ne se contre-passe pas : elle s'annule par un avoir (phase 3).
+
+### Reste à faire / points ouverts
+- Valider la connexion Entra ID sur le tenant Newrest (inscription d'application, rôles d'application).
+- Écrans tickets / avoirs / clôtures / vérification de chaîne, facturation mensuelle et tableau de bord : ils
+  dépendent des tickets synchronisés par les caisses → livrés avec les phases 3 et suivantes.
+- Synchronisation descendante pour les caisses (catalogue, menus publiés, badges, soldes) : phase 3.
+- Stockage des photos sur blob storage, si retenu par la DSI : nouvelle implémentation de `IFileStorage`.
+
+## Phase 3 — Caisse WPF (à venir)
+Session, vente manuelle, paiements, badge, subvention, impression (simulateur), clôture Z, SQLite + outbox + sync,
+mode hors ligne, endpoints de synchronisation caisse.

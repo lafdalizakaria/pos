@@ -65,6 +65,24 @@ public sealed class SubsidyRule : ReferenceEntity
     public DateOnly? ValidTo { get; private set; }
 
     public bool IsValidOn(DateOnly date) => date >= ValidFrom && (ValidTo is null || date <= ValidTo);
+
+    /// <summary>
+    /// Rules are never edited in place (past tickets reference them): a change = close this rule and create a new one.
+    /// </summary>
+    public void Close(DateOnly lastValidDate)
+    {
+        if (lastValidDate < ValidFrom.AddDays(-1))
+        {
+            throw new DomainException("invalid_validity", "A rule cannot be closed before the day preceding its start.");
+        }
+
+        if (ValidTo is { } current && lastValidDate > current)
+        {
+            throw new DomainException("invalid_validity", "A closed rule cannot be extended; create a new rule.");
+        }
+
+        ValidTo = lastValidDate;
+    }
 }
 
 /// <param name="TicketTotal">Total of the ticket, TTC.</param>

@@ -1,0 +1,295 @@
+@page "/clients"
+@inherits PageBase
+
+<PageTitle>Clients & contrats - Newrest POS</PageTitle>
+<h1>Clients &amp; contrats</h1>
+<Notice Error="@Error" Success="@Success" />
+
+<div class="grid-2">
+    <section class="card">
+        <h2>Clients B2B</h2>
+        <table>
+            <thead><tr><th>Code</th><th>Raison sociale</th><th>Société Newrest</th><th>Statut</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var c in _clients)
+                {
+                    <tr class="@(c.Id == _client?.Id ? "selected" : null)">
+                        <td>@c.Code</td><td>@c.Name</td><td>@_companies.FirstOrDefault(x => x.Id == c.CompanyId)?.Code</td><td>@Messages.Status(c.IsActive)</td>
+                        <td class="actions"><button class="link" @onclick="() => SelectClientAsync(c)">Contrats</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (CanWrite)
+        {
+            <h3>@(_clientId is null ? "Nouveau client" : "Modifier le client")</h3>
+            <div class="form">
+                <label>Société Newrest
+                    <select @bind="_clientForm.CompanyId" disabled="@(_clientId is not null)">
+                        @foreach (var c in _companies) { <option value="@c.Id">@c.Name</option> }
+                    </select>
+                </label>
+                <label>Code<input @bind="_clientForm.Code" disabled="@(_clientId is not null)" /></label>
+                <label>Raison sociale<input @bind="_clientForm.Name" /></label>
+                <label>ICE<input @bind="_clientForm.Ice" maxlength="15" /></label>
+                <label class="wide">Adresse de facturation<input @bind="_clientForm.BillingAddress" /></label>
+                <label class="check"><input type="checkbox" @bind="_clientForm.IsActive" /> Actif</label>
+            </div>
+            <button class="primary" disabled="@Busy" @onclick="SaveClientAsync">Enregistrer</button>
+            @if (_client is not null) { <button class="link" @onclick="() => EditClient(_client)">Modifier le client sélectionné</button> }
+            <button class="link" @onclick="NewClient">Nouveau</button>
+        }
+    </section>
+
+    <section class="card">
+        @if (_client is null)
+        {
+            <p>Sélectionnez un client.</p>
+        }
+        else
+        {
+            <h2>Contrats — @_client.Name</h2>
+            <table>
+                <thead><tr><th>Référence</th><th>Période</th><th>Facturation</th><th>Points de vente</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var k in _contracts)
+                    {
+                        <tr class="@(k.Id == _contract?.Id ? "selected" : null) @(k.IsActive ? null : "inactive")">
+                            <td>@k.Reference</td>
+                            <td>@Messages.Date(k.StartDate) → @(k.EndDate is { } e ? Messages.Date(e) : "…")</td>
+                            <td>@(k.BillingMode == "PayrollDeduction" ? "Retenue sur salaire" : "Facture employeur")</td>
+                            <td>@string.Join(", ", k.PointOfSaleIds.Select(PosName))</td>
+                            <td class="actions"><button class="link" @onclick="() => SelectContract(k)">Ouvrir</button></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            @if (CanWrite)
+            {
+                <h3>@(_contract is null ? "Nouveau contrat" : $"Contrat {_contract.Reference}")</h3>
+                <div class="form">
+                    <label>Référence<input @bind="_contractForm.Reference" disabled="@(_contract is not null)" /></label>
+                    <label>Début<input type="date" @bind="_contractForm.StartDate" /></label>
+                    <label>Fin (optionnelle)<input type="date" @bind="_contractForm.EndDate" /></label>
+                    <label>Facturation
+                        <select @bind="_contractForm.BillingMode">
+                            <option value="EmployerInvoice">Facture employeur</option>
+                            <option value="PayrollDeduction">Retenue sur salaire</option>
+                        </select>
+                    </label>
+                    <label class="check"><input type="checkbox" @bind="_contractForm.IsActive" /> Actif</label>
+                </div>
+                <fieldset class="checks">
+                    <legend>Points de vente acceptés</legend>
+                    @foreach (var p in ClientPointsOfSale)
+                    {
+                        <label class="check"><input type="checkbox" checked="@_contractForm.PointOfSaleIds.Contains(p.Id)" @onchange="e => TogglePos(p.Id, (bool)e.Value!)" /> @p.Name</label>
+                    }
+                </fieldset>
+                <button class="primary" disabled="@Busy" @onclick="SaveContractAsync">Enregistrer le contrat</button>
+                <button class="link" @onclick="NewContract">Nouveau contrat</button>
+            }
+
+            @if (_contract is not null)
+            {
+                <h3>Règles de subvention</h3>
+                <p class="hint">Une règle n'est jamais modifiée : pour la changer, clôturez-la et créez-en une nouvelle (les tickets passés gardent leur règle).</p>
+                <table>
+                    <thead><tr><th>Nom</th><th>Calcul</th><th>Plafonds</th><th>Catégorie</th><th>Validité</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var r in _contract.SubsidyRules)
+                        {
+                            <tr>
+                                <td>@r.Name</td>
+                                <td>@(r.Kind == "Percentage" ? $"{r.Value:0.##} %" : Messages.Mad(r.Value))</td>
+                                <td>@Caps(r)</td>
+                                <td>@(r.DinerCategory ?? "Tous")</td>
+                                <td>@Messages.Date(r.ValidFrom) → @(r.ValidTo is { } t ? Messages.Date(t) : "…")</td>
+                                <td class="actions">
+                                    @if (CanWrite && r.ValidTo is null) { <button class="link danger" @onclick="() => CloseRuleAsync(r)">Clôturer hier</button> }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                @if (CanWrite)
+                {
+                    <div class="form">
+                        <label>Nom<input @bind="_rule.Name" /></label>
+                        <label>Calcul
+                            <select @bind="_rule.Kind"><option value="Percentage">Pourcentage</option><option value="FixedAmount">Montant fixe</option></select>
+                        </label>
+                        <label>Valeur (% ou MAD)<input type="number" step="0.01" min="0" @bind="_rule.Value" /></label>
+                        <label>Plafond par repas (MAD)<input type="number" step="0.01" min="0" @bind="_rule.MaxPerMeal" /></label>
+                        <label>Plafond par jour (MAD)<input type="number" step="0.01" min="0" @bind="_rule.MaxPerDay" /></label>
+                        <label>Repas subventionnés / jour<input type="number" min="1" @bind="_rule.MaxMealsPerDay" /></label>
+                        <label>Catégorie de convive<input @bind="_rule.DinerCategory" placeholder="ex. CADRE (vide = tous)" /></label>
+                        <label>À partir du<input type="date" @bind="_rule.ValidFrom" /></label>
+                    </div>
+                    <button class="secondary" disabled="@Busy" @onclick="AddRuleAsync">Ajouter la règle</button>
+                }
+            }
+        }
+    </section>
+</div>
+
+@code {
+    private IReadOnlyList<CompanyDto> _companies = [];
+    private IReadOnlyList<SiteDto> _sites = [];
+    private IReadOnlyList<PointOfSaleDto> _pointsOfSale = [];
+    private IReadOnlyList<ClientCompanyDto> _clients = [];
+    private IReadOnlyList<ContractDto> _contracts = [];
+    private ClientCompanyDto? _client;
+    private ContractDto? _contract;
+    private Guid? _clientId;
+    private ClientForm _clientForm = new();
+    private ContractForm _contractForm = new();
+    private RuleForm _rule = new();
+
+    protected override async Task LoadAsync()
+    {
+        _companies = await Run<OrganizationService, IReadOnlyList<CompanyDto>>(s => s.ListCompaniesAsync()) ?? [];
+        _sites = await Run<OrganizationService, IReadOnlyList<SiteDto>>(s => s.ListSitesAsync()) ?? [];
+        _pointsOfSale = await Run<OrganizationService, IReadOnlyList<PointOfSaleDto>>(s => s.ListPointsOfSaleAsync()) ?? [];
+        _clients = await Run<ClientService, IReadOnlyList<ClientCompanyDto>>(s => s.ListClientsAsync()) ?? [];
+        NewClient();
+    }
+
+    private IEnumerable<PointOfSaleDto> ClientPointsOfSale =>
+        _pointsOfSale.Where(p => _sites.Any(s => s.Id == p.SiteId && s.CompanyId == _client?.CompanyId));
+
+    private string PosName(Guid id) => _pointsOfSale.FirstOrDefault(p => p.Id == id)?.Name ?? "(hors périmètre)";
+
+    private static string Caps(SubsidyRuleDto r)
+    {
+        var caps = new List<string>();
+        if (r.MaxPerMeal is { } m) { caps.Add($"{Messages.Mad(m)}/repas"); }
+        if (r.MaxPerDay is { } d) { caps.Add($"{Messages.Mad(d)}/jour"); }
+        if (r.MaxMealsPerDay is { } n) { caps.Add($"{n} repas/jour"); }
+        return caps.Count == 0 ? "—" : string.Join(", ", caps);
+    }
+
+    private async Task SelectClientAsync(ClientCompanyDto client)
+    {
+        _client = client;
+        _contracts = await Run<ClientService, IReadOnlyList<ContractDto>>(s => s.ListContractsAsync(client.Id)) ?? [];
+        NewContract();
+    }
+
+    private void NewClient() => (_clientId, _clientForm) = (null, new ClientForm { CompanyId = _companies.FirstOrDefault()?.Id ?? Guid.Empty });
+
+    private void EditClient(ClientCompanyDto c) => (_clientId, _clientForm) = (c.Id, new ClientForm
+    {
+        CompanyId = c.CompanyId, Code = c.Code, Name = c.Name, Ice = c.Ice, BillingAddress = c.BillingAddress, IsActive = c.IsActive,
+    });
+
+    private async Task SaveClientAsync()
+    {
+        var request = new ClientCompanyUpsert(_clientForm.CompanyId, _clientForm.Code, _clientForm.Name, _clientForm.Ice, _clientForm.BillingAddress,
+            _clientForm.IsActive);
+        var id = _clientId;
+        if (await Run<ClientService>(s => id is { } e ? s.UpdateClientAsync(e, request) : s.CreateClientAsync(request), "Client enregistré."))
+        {
+            _clients = await Run<ClientService, IReadOnlyList<ClientCompanyDto>>(s => s.ListClientsAsync()) ?? _clients;
+            NewClient();
+        }
+    }
+
+    private void NewContract()
+    {
+        _contract = null;
+        _contractForm = new ContractForm();
+    }
+
+    private void SelectContract(ContractDto k)
+    {
+        _contract = k;
+        _contractForm = new ContractForm
+        {
+            Reference = k.Reference, StartDate = k.StartDate, EndDate = k.EndDate, BillingMode = k.BillingMode, IsActive = k.IsActive,
+            PointOfSaleIds = [.. k.PointOfSaleIds],
+        };
+        _rule = new RuleForm();
+    }
+
+    private void TogglePos(Guid id, bool selected)
+    {
+        if (selected) { _contractForm.PointOfSaleIds.Add(id); } else { _contractForm.PointOfSaleIds.Remove(id); }
+    }
+
+    private async Task SaveContractAsync()
+    {
+        var client = _client!;
+        var request = new ContractUpsert(client.Id, _contractForm.Reference, _contractForm.StartDate, _contractForm.EndDate, _contractForm.BillingMode,
+            [.. _contractForm.PointOfSaleIds]);
+        var existing = _contract?.Id;
+        var saved = await Run<ClientService, ContractDto>(s => existing is { } e ? s.UpdateContractAsync(e, request) : s.CreateContractAsync(request),
+            "Contrat enregistré.");
+        if (saved is not null)
+        {
+            await SelectClientAsync(client);
+            SelectContract(saved);
+        }
+    }
+
+    private async Task AddRuleAsync()
+    {
+        var contract = _contract!;
+        var request = new SubsidyRuleCreate(_rule.Name, _rule.Kind, _rule.Value, _rule.ValidFrom, _rule.MaxPerMeal, _rule.MaxPerDay, _rule.MaxMealsPerDay,
+            _rule.DinerCategory, null);
+        if (await Run<ClientService, SubsidyRuleDto>(s => s.AddSubsidyRuleAsync(contract.Id, request), "Règle ajoutée.") is not null)
+        {
+            await ReloadContractAsync(contract.Id);
+        }
+    }
+
+    private async Task CloseRuleAsync(SubsidyRuleDto rule)
+    {
+        if (await Run<ClientService, SubsidyRuleDto>(s => s.CloseSubsidyRuleAsync(rule.Id, new SubsidyRuleClose(DateOnly.FromDateTime(DateTime.Today).AddDays(-1))),
+                "Règle clôturée.") is not null)
+        {
+            await ReloadContractAsync(rule.ContractId);
+        }
+    }
+
+    private async Task ReloadContractAsync(Guid contractId)
+    {
+        if (await Run<ClientService, ContractDto>(s => s.GetContractAsync(contractId)) is { } reloaded)
+        {
+            SelectContract(reloaded);
+            _contracts = [.. _contracts.Select(c => c.Id == reloaded.Id ? reloaded : c)];
+        }
+    }
+
+    private sealed class ClientForm
+    {
+        public Guid CompanyId { get; set; }
+        public string Code { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string? Ice { get; set; }
+        public string? BillingAddress { get; set; }
+        public bool IsActive { get; set; } = true;
+    }
+
+    private sealed class ContractForm
+    {
+        public string Reference { get; set; } = "";
+        public DateOnly StartDate { get; set; } = DateOnly.FromDateTime(DateTime.Today);
+        public DateOnly? EndDate { get; set; }
+        public string BillingMode { get; set; } = "EmployerInvoice";
+        public bool IsActive { get; set; } = true;
+        public HashSet<Guid> PointOfSaleIds { get; set; } = [];
+    }
+
+    private sealed class RuleForm
+    {
+        public string Name { get; set; } = "";
+        public string Kind { get; set; } = "Percentage";
+        public decimal Value { get; set; }
+        public decimal? MaxPerMeal { get; set; }
+        public decimal? MaxPerDay { get; set; }
+        public int? MaxMealsPerDay { get; set; }
+        public string? DinerCategory { get; set; }
+        public DateOnly ValidFrom { get; set; } = DateOnly.FromDateTime(DateTime.Today);
+    }
+}

@@ -1,0 +1,304 @@
+@page "/convives"
+@inherits PageBase
+
+<PageTitle>Convives & badges - Newrest POS</PageTitle>
+<h1>Convives &amp; badges</h1>
+<Notice Error="@Error" Success="@Success" />
+
+<div class="toolbar">
+    <label>Client
+        <select @bind="ClientId" @bind:after="ClientChangedAsync">
+            @foreach (var c in _clients) { <option value="@c.Id">@c.Name</option> }
+        </select>
+    </label>
+    <input placeholder="Matricule, nom ou n° de badge" @bind="_search" @bind:event="oninput" @bind:after="() => GoToAsync(1)" />
+    <span class="muted">@_page.TotalCount convive(s)</span>
+</div>
+
+<div class="grid-2">
+    <section class="card">
+        <table>
+            <thead><tr><th>Matricule</th><th>Nom</th><th>Catégorie</th><th>Badge actif</th><th class="num">Solde</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var d in _page.Items)
+                {
+                    <tr class="@(d.Id == _diner?.Id ? "selected" : null) @(d.IsActive ? null : "inactive")">
+                        <td>@d.EmployeeNumber</td><td>@d.LastName @d.FirstName</td><td>@d.Category</td>
+                        <td>@(d.Badges.FirstOrDefault(b => b.Status == "Active")?.Number ?? "—")</td>
+                        <td class="num">@(d.Accounts.Count > 0 ? Messages.Mad(d.Accounts.Sum(a => a.Balance)) : "—")</td>
+                        <td class="actions"><button class="link" @onclick="() => Select(d)">Ouvrir</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <Pager Page="_pageNumber" PageSize="PageSize" Total="_page.TotalCount" OnChange="GoToAsync" />
+    </section>
+
+    <section class="card">
+        @if (_diner is not null)
+        {
+            <h2>@_diner.FirstName @_diner.LastName <small>(@_diner.EmployeeNumber)</small></h2>
+            @if (CanWrite)
+            {
+                <div class="form">
+                    <label>Prénom<input @bind="_edit.FirstName" /></label>
+                    <label>Nom<input @bind="_edit.LastName" /></label>
+                    <label>Catégorie<input @bind="_edit.Category" /></label>
+                    <label class="check"><input type="checkbox" @bind="_edit.IsActive" /> Actif</label>
+                </div>
+                <button class="primary" disabled="@Busy" @onclick="UpdateAsync">Enregistrer</button>
+            }
+            <h3>Badges</h3>
+            <table>
+                <thead><tr><th>Numéro</th><th>Statut</th><th>Émis le</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var b in _diner.Badges)
+                    {
+                        <tr>
+                            <td><code>@b.Number</code></td><td>@BadgeStatus(b.Status)</td><td>@Messages.DateTime(b.IssuedAt)</td>
+                            <td class="actions">
+                                @if (CanWrite && b.Status == "Active")
+                                {
+                                    <button class="link danger" @onclick="() => _lostBadge = b">Déclarer perdu</button>
+                                    <button class="link" @onclick="() => BlockAsync(b, true)">Bloquer</button>
+                                }
+                                @if (CanWrite && b.Status == "Blocked") { <button class="link" @onclick="() => BlockAsync(b, false)">Débloquer</button> }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            @if (_lostBadge is not null)
+            {
+                <div class="panel">
+                    <p>Badge <code>@_lostBadge.Number</code> perdu : il sera bloqué immédiatement. Le solde reste sur le compte du convive.</p>
+                    <label>Numéro du nouveau badge<input @bind="_newBadge" /></label>
+                    <button class="primary" disabled="@Busy" @onclick="ReplaceLostAsync">Bloquer et remplacer</button>
+                    <button class="link" @onclick="() => _lostBadge = null">Annuler</button>
+                </div>
+            }
+            else if (CanWrite && _diner.Badges.All(b => b.Status != "Active"))
+            {
+                <div class="form">
+                    <label>Nouveau badge<input @bind="_newBadge" /></label>
+                </div>
+                <button class="secondary" disabled="@Busy" @onclick="IssueAsync">Attribuer</button>
+            }
+            <h3>Comptes</h3>
+            @foreach (var a in _diner.Accounts)
+            {
+                <p>@AccountType(a.Type) — solde <strong>@Messages.Mad(a.Balance)</strong>, découvert @Messages.Mad(a.OverdraftLimit) — <a href="comptes?id=@a.Id">ouvrir le compte</a></p>
+            }
+        }
+        else if (CanWrite)
+        {
+            <h2>Nouveau convive</h2>
+            <div class="form">
+                <label>Contrat
+                    <select @bind="_create.ContractId">
+                        @foreach (var k in _contracts) { <option value="@k.Id">@k.Reference</option> }
+                    </select>
+                </label>
+                <label>Matricule<input @bind="_create.EmployeeNumber" /></label>
+                <label>Prénom<input @bind="_create.FirstName" /></label>
+                <label>Nom<input @bind="_create.LastName" /></label>
+                <label>Catégorie<input @bind="_create.Category" /></label>
+                <label>Type de compte
+                    <select @bind="_create.AccountType"><option value="Prepaid">Prépayé</option><option value="Postpaid">Postpayé</option><option value="Mixed">Mixte</option></select>
+                </label>
+                <label>Découvert autorisé (MAD)<input type="number" step="0.01" min="0" @bind="_create.OverdraftLimit" /></label>
+                <label>Badge<input @bind="_create.BadgeNumber" /></label>
+            </div>
+            <button class="primary" disabled="@Busy" @onclick="CreateAsync">Créer</button>
+        }
+
+        @if (CanWrite)
+        {
+            <h2>Import CSV / Excel</h2>
+            <p class="hint">Colonnes : Matricule, Nom, Prénom, Catégorie, Badge, TypeCompte (Prepaid/Postpaid/Mixed), Découvert, Actif (oui/non). CSV UTF-8 séparé par « ; ».</p>
+            <div class="form">
+                <label>Contrat
+                    <select @bind="_importContractId">
+                        @foreach (var k in _contracts) { <option value="@k.Id">@k.Reference</option> }
+                    </select>
+                </label>
+                <label class="check"><input type="checkbox" @bind="_dryRun" /> Simulation (aucun enregistrement)</label>
+                <label>Fichier<InputFile accept=".csv,.xlsx" OnChange="ImportAsync" /></label>
+            </div>
+            @if (_import is not null)
+            {
+                <p><strong>@(_dryRun ? "Simulation" : "Import")</strong> : @_import.Created créé(s), @_import.Updated mis à jour, @_import.Unchanged inchangé(s), @_import.Errors.Count erreur(s).</p>
+                @if (_import.Errors.Count > 0)
+                {
+                    <table>
+                        <thead><tr><th>Ligne</th><th>Matricule</th><th>Erreur</th></tr></thead>
+                        <tbody>@foreach (var e in _import.Errors) { <tr><td>@e.Line</td><td>@e.EmployeeNumber</td><td>@e.Message</td></tr> }</tbody>
+                    </table>
+                }
+            }
+        }
+    </section>
+</div>
+
+@code {
+    private const int PageSize = 25;
+    private IReadOnlyList<ClientCompanyDto> _clients = [];
+    private IReadOnlyList<ContractDto> _contracts = [];
+    private PagedResult<DinerDto> _page = new([], 0, 1, PageSize);
+    private int _pageNumber = 1;
+    private string? _search;
+    private DinerDto? _diner;
+    private BadgeDto? _lostBadge;
+    private string _newBadge = "";
+    private EditForm _edit = new();
+    private CreateForm _create = new();
+    private Guid _importContractId;
+    private bool _dryRun = true;
+    private DinerImportResult? _import;
+
+    private Guid ClientId { get; set; }
+
+    protected override async Task LoadAsync()
+    {
+        _clients = await Run<ClientService, IReadOnlyList<ClientCompanyDto>>(s => s.ListClientsAsync()) ?? [];
+        if (_clients.Count > 0)
+        {
+            ClientId = _clients[0].Id;
+            await ClientChangedAsync();
+        }
+    }
+
+    private async Task ClientChangedAsync()
+    {
+        _diner = null;
+        _import = null;
+        var client = ClientId;
+        _contracts = await Run<ClientService, IReadOnlyList<ContractDto>>(s => s.ListContractsAsync(client)) ?? [];
+        _create = new CreateForm { ContractId = _contracts.FirstOrDefault()?.Id ?? Guid.Empty };
+        _importContractId = _create.ContractId;
+        await GoToAsync(1);
+    }
+
+    private async Task GoToAsync(int page)
+    {
+        _pageNumber = page;
+        var client = ClientId;
+        _page = await Run<DinerService, PagedResult<DinerDto>>(s => s.ListAsync(client, _search, page, PageSize)) ?? _page;
+    }
+
+    private static string BadgeStatus(string status) => status switch
+    {
+        "Active" => "Actif", "Lost" => "Perdu", "Blocked" => "Bloqué", _ => "Rendu",
+    };
+
+    private static string AccountType(string type) => type switch { "Prepaid" => "Prépayé", "Postpaid" => "Postpayé", _ => "Mixte" };
+
+    private void Select(DinerDto d)
+    {
+        _diner = d;
+        _lostBadge = null;
+        _newBadge = "";
+        _edit = new EditForm { FirstName = d.FirstName, LastName = d.LastName, Category = d.Category, IsActive = d.IsActive };
+    }
+
+    private async Task RefreshDinerAsync(Guid id)
+    {
+        if (await Run<DinerService, DinerDto>(s => s.GetAsync(id)) is { } d)
+        {
+            Select(d);
+        }
+
+        await GoToAsync(_pageNumber);
+    }
+
+    private async Task UpdateAsync()
+    {
+        var id = _diner!.Id;
+        if (await Run<DinerService, DinerDto>(s => s.UpdateAsync(id, new DinerUpdate(_edit.FirstName, _edit.LastName, _edit.Category, _edit.IsActive)),
+                "Convive enregistré.") is not null)
+        {
+            await RefreshDinerAsync(id);
+        }
+    }
+
+    private async Task ReplaceLostAsync()
+    {
+        var (dinerId, badgeId) = (_diner!.Id, _lostBadge!.Id);
+        if (await Run<DinerService, BadgeDto>(s => s.ReplaceLostBadgeAsync(badgeId, new BadgeReplace(_newBadge)),
+                "Ancien badge bloqué, nouveau badge actif.") is not null)
+        {
+            await RefreshDinerAsync(dinerId);
+        }
+    }
+
+    private async Task IssueAsync()
+    {
+        var dinerId = _diner!.Id;
+        if (await Run<DinerService, BadgeDto>(s => s.IssueBadgeAsync(dinerId, new BadgeIssue(_newBadge)), "Badge attribué.") is not null)
+        {
+            await RefreshDinerAsync(dinerId);
+        }
+    }
+
+    private async Task BlockAsync(BadgeDto badge, bool block)
+    {
+        var dinerId = _diner!.Id;
+        if (await Run<DinerService, BadgeDto>(s => s.SetBadgeBlockedAsync(badge.Id, block), block ? "Badge bloqué." : "Badge débloqué.") is not null)
+        {
+            await RefreshDinerAsync(dinerId);
+        }
+    }
+
+    private async Task CreateAsync()
+    {
+        var request = new DinerCreate(ClientId, _create.ContractId, _create.EmployeeNumber, _create.FirstName, _create.LastName, _create.Category,
+            _create.AccountType, _create.OverdraftLimit, _create.BadgeNumber);
+        if (await Run<DinerService, DinerDto>(s => s.CreateAsync(request), "Convive créé.") is { } created)
+        {
+            Select(created);
+            await GoToAsync(_pageNumber);
+        }
+    }
+
+    private async Task ImportAsync(InputFileChangeEventArgs e)
+    {
+        using var buffer = new MemoryStream();
+        try
+        {
+            await e.File.OpenReadStream(10 * 1024 * 1024).CopyToAsync(buffer);
+        }
+        catch (IOException)
+        {
+            Error = "Fichier trop volumineux (10 Mo maximum).";
+            return;
+        }
+
+        buffer.Position = 0;
+        var (client, contract, dryRun) = (ClientId, _importContractId, _dryRun);
+        _import = await Run<DinerService, DinerImportResult>(s => s.ImportAsync(client, contract, e.File.Name, buffer, dryRun));
+        if (_import is not null && !dryRun)
+        {
+            await GoToAsync(1);
+        }
+    }
+
+    private sealed class EditForm
+    {
+        public string FirstName { get; set; } = "";
+        public string LastName { get; set; } = "";
+        public string? Category { get; set; }
+        public bool IsActive { get; set; }
+    }
+
+    private sealed class CreateForm
+    {
+        public Guid ContractId { get; set; }
+        public string EmployeeNumber { get; set; } = "";
+        public string FirstName { get; set; } = "";
+        public string LastName { get; set; } = "";
+        public string? Category { get; set; }
+        public string AccountType { get; set; } = "Prepaid";
+        public decimal OverdraftLimit { get; set; }
+        public string? BadgeNumber { get; set; }
+    }
+}

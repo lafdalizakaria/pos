@@ -12,7 +12,9 @@
     <Project Path="src/Newrest.Pos.Migrator/Newrest.Pos.Migrator.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Newrest.Pos.Api.Tests/Newrest.Pos.Api.Tests.csproj" />
     <Project Path="tests/Newrest.Pos.Domain.Tests/Newrest.Pos.Domain.Tests.csproj" />
     <Project Path="tests/Newrest.Pos.Infrastructure.IntegrationTests/Newrest.Pos.Infrastructure.IntegrationTests.csproj" />
+    <Project Path="tests/Newrest.Pos.Testing/Newrest.Pos.Testing.csproj" />
   </Folder>
 </Solution>

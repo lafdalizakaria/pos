@@ -1,0 +1,143 @@
+@page "/operateurs"
+@inherits PageBase
+
+<PageTitle>Opérateurs - Newrest POS</PageTitle>
+<h1>Opérateurs de caisse</h1>
+<Notice Error="@Error" Success="@Success" />
+
+<section class="card">
+    <table>
+        <thead><tr><th>Code</th><th>Nom</th><th>Société</th><th>Site</th><th>Rôles</th><th>Statut</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var o in _operators)
+            {
+                <tr>
+                    <td>@o.Code</td><td>@o.FirstName @o.LastName</td><td>@CompanyName(o.CompanyId)</td>
+                    <td>@(o.SiteId is { } s ? SiteName(s) : "Tous")</td>
+                    <td>@string.Join(", ", o.Roles.Select(RoleLabel))</td>
+                    <td>@(o.IsLockedOut ? "Verrouillé" : Messages.Status(o.IsActive))</td>
+                    <td class="actions">
+                        @if (CanWrite)
+                        {
+                            <button class="link" @onclick="() => Edit(o)">Modifier</button>
+                            @if (o.IsLockedOut) { <button class="link" @onclick="() => UnlockAsync(o)">Déverrouiller</button> }
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</section>
+
+@if (CanWrite)
+{
+    <section class="card">
+        <h2>@(_id is null ? "Nouvel opérateur" : "Modifier l'opérateur")</h2>
+        <div class="form">
+            <label>Société
+                <select @bind="_form.CompanyId" disabled="@(_id is not null)">
+                    @foreach (var c in _companies) { <option value="@c.Id">@c.Name</option> }
+                </select>
+            </label>
+            <label>Site
+                <select @bind="_form.SiteId">
+                    <option value="">Tous les sites</option>
+                    @foreach (var s in _sites.Where(s => s.CompanyId == _form.CompanyId)) { <option value="@s.Id">@s.Name</option> }
+                </select>
+            </label>
+            <label>Code<input @bind="_form.Code" disabled="@(_id is not null)" /></label>
+            <label>Prénom<input @bind="_form.FirstName" /></label>
+            <label>Nom<input @bind="_form.LastName" /></label>
+            <label>@(_id is null ? "PIN (4 à 8 chiffres)" : "Nouveau PIN (laisser vide pour ne pas changer)")
+                <input type="password" inputmode="numeric" autocomplete="new-password" @bind="_form.Pin" />
+            </label>
+            <label class="check"><input type="checkbox" @bind="_form.Cashier" /> Caissier</label>
+            <label class="check"><input type="checkbox" @bind="_form.Supervisor" /> Responsable</label>
+            <label class="check"><input type="checkbox" @bind="_form.Admin" /> Administrateur caisse</label>
+            <label class="check"><input type="checkbox" @bind="_form.IsActive" /> Actif</label>
+        </div>
+        <button class="primary" disabled="@Busy" @onclick="SaveAsync">Enregistrer</button>
+        <button class="link" @onclick="New">Annuler</button>
+    </section>
+}
+
+@code {
+    private IReadOnlyList<OperatorDto> _operators = [];
+    private IReadOnlyList<CompanyDto> _companies = [];
+    private IReadOnlyList<SiteDto> _sites = [];
+    private Guid? _id;
+    private OperatorForm _form = new();
+
+    protected override async Task LoadAsync()
+    {
+        _companies = await Run<OrganizationService, IReadOnlyList<CompanyDto>>(s => s.ListCompaniesAsync()) ?? [];
+        _sites = await Run<OrganizationService, IReadOnlyList<SiteDto>>(s => s.ListSitesAsync()) ?? [];
+        _operators = await Run<OrganizationService, IReadOnlyList<OperatorDto>>(s => s.ListOperatorsAsync()) ?? [];
+        if (_id is null)
+        {
+            New();
+        }
+    }
+
+    private string CompanyName(Guid id) => _companies.FirstOrDefault(c => c.Id == id)?.Code ?? "?";
+
+    private string SiteName(Guid id) => _sites.FirstOrDefault(s => s.Id == id)?.Name ?? "?";
+
+    private static string RoleLabel(string role) => role switch { "Cashier" => "Caissier", "Supervisor" => "Responsable", _ => "Admin" };
+
+    private void New() => (_id, _form) = (null, new OperatorForm { CompanyId = _companies.FirstOrDefault()?.Id ?? Guid.Empty });
+
+    private void Edit(OperatorDto o) => (_id, _form) = (o.Id, new OperatorForm
+    {
+        CompanyId = o.CompanyId, SiteId = o.SiteId, Code = o.Code, FirstName = o.FirstName, LastName = o.LastName,
+        Cashier = o.Roles.Contains("Cashier"), Supervisor = o.Roles.Contains("Supervisor"), Admin = o.Roles.Contains("Admin"),
+        IsActive = o.IsActive,
+    });
+
+    private async Task SaveAsync()
+    {
+        var roles = new List<string>();
+        if (_form.Cashier) { roles.Add("Cashier"); }
+        if (_form.Supervisor) { roles.Add("Supervisor"); }
+        if (_form.Admin) { roles.Add("Admin"); }
+
+        var ok = _id is { } id
+            ? await Run<OrganizationService>(async s =>
+            {
+                await s.UpdateOperatorAsync(id, new OperatorUpdate(_form.SiteId, _form.FirstName, _form.LastName, roles, _form.IsActive));
+                if (!string.IsNullOrEmpty(_form.Pin))
+                {
+                    await s.SetOperatorPinAsync(id, _form.Pin);
+                }
+            }, "Opérateur mis à jour.")
+            : await Run<OrganizationService>(s => s.CreateOperatorAsync(new OperatorCreate(_form.CompanyId, _form.SiteId, _form.Code,
+                _form.FirstName, _form.LastName, roles, _form.Pin ?? "")), "Opérateur créé.");
+        if (ok)
+        {
+            _id = null;
+            await LoadAsync();
+        }
+    }
+
+    private async Task UnlockAsync(OperatorDto o)
+    {
+        if (await Run<OrganizationService>(s => s.UnlockOperatorAsync(o.Id), "Opérateur déverrouillé."))
+        {
+            await LoadAsync();
+        }
+    }
+
+    private sealed class OperatorForm
+    {
+        public Guid CompanyId { get; set; }
+        public Guid? SiteId { get; set; }
+        public string Code { get; set; } = "";
+        public string FirstName { get; set; } = "";
+        public string LastName { get; set; } = "";
+        public string? Pin { get; set; }
+        public bool Cashier { get; set; } = true;
+        public bool Supervisor { get; set; }
+        public bool Admin { get; set; }
+        public bool IsActive { get; set; } = true;
+    }
+}

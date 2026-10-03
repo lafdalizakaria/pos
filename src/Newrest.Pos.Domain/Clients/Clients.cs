@@ -71,6 +71,17 @@ public sealed class Contract : ReferenceEntity
 
     public bool IsActiveOn(DateOnly date) => IsActive && date >= StartDate && (EndDate is null || date <= EndDate);
 
+    public void SetPeriod(DateOnly startDate, DateOnly? endDate)
+    {
+        if (endDate is { } end && end < startDate)
+        {
+            throw new DomainException("invalid_validity", "End date must be on or after start date.");
+        }
+
+        StartDate = startDate;
+        EndDate = endDate;
+    }
+
     public bool AcceptsPointOfSale(Guid pointOfSaleId) => _pointsOfSale.Any(p => p.PointOfSaleId == pointOfSaleId);
 
     public void AcceptPointOfSale(Guid pointOfSaleId)
