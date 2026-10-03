@@ -82,3 +82,34 @@ jobs:
         with:
           name: test-results
           path: TestResults/
+
+  vision:
+    name: Vision service (ruff, pytest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: vision
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install (locked)
+        run: uv sync --locked
+
+      - name: Lint and format check
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+
+      - name: Tests (mock provider and fake Gemini client, no network, no key)
+        run: uv run pytest -q --junitxml=../TestResults/vision/pytest.xml
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vision-test-results
+          path: TestResults/vision/
