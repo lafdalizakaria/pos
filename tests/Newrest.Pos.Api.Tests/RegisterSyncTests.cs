@@ -96,10 +96,19 @@ public sealed class RegisterSyncTests(SqlServerFixture fixture) : ApiTestBase(fi
         var movementKey = Guid.NewGuid();
         var ticket = Ticket.Issue(new TicketIssueRequest
         {
-            Id = Guid.NewGuid(), RegisterId = Cas1, RegisterPrefix = "CAS1", Sequence = 1, PreviousHash = TicketHasher.GenesisHash,
-            CashSessionId = session, OperatorId = Cashier, BusinessDate = Today, IssuedAt = DateTimeOffset.UtcNow,
+            Id = Guid.NewGuid(),
+            RegisterId = Cas1,
+            RegisterPrefix = "CAS1",
+            Sequence = 1,
+            PreviousHash = TicketHasher.GenesisHash,
+            CashSessionId = session,
+            OperatorId = Cashier,
+            BusinessDate = Today,
+            IssuedAt = DateTimeOffset.UtcNow,
             Lines = [new TicketLineInput(CouscousViande, "CSC-VND", "Couscous viande", 1, 42m, 0.10m)],
-            DinerId = KhadijaDiner, AccountId = Khadija, SubsidyAmount = 20m,
+            DinerId = KhadijaDiner,
+            AccountId = Khadija,
+            SubsidyAmount = 20m,
             Payments = [new PaymentInput(PaymentMethod.Account, 22m) { AccountMovementId = movementKey }],
         });
 
@@ -138,10 +147,18 @@ public sealed class RegisterSyncTests(SqlServerFixture fixture) : ApiTestBase(fi
         var debitKey = Guid.NewGuid();
         var sale = Ticket.Issue(new TicketIssueRequest
         {
-            Id = Guid.NewGuid(), RegisterId = Cas1, RegisterPrefix = "CAS1", Sequence = 1, PreviousHash = TicketHasher.GenesisHash,
-            CashSessionId = session, OperatorId = Cashier, BusinessDate = Today, IssuedAt = DateTimeOffset.UtcNow,
+            Id = Guid.NewGuid(),
+            RegisterId = Cas1,
+            RegisterPrefix = "CAS1",
+            Sequence = 1,
+            PreviousHash = TicketHasher.GenesisHash,
+            CashSessionId = session,
+            OperatorId = Cashier,
+            BusinessDate = Today,
+            IssuedAt = DateTimeOffset.UtcNow,
             Lines = [new TicketLineInput(CouscousPoulet, "CSC-PLT", "Couscous poulet", 1, 38m, 0.10m)],
-            DinerId = KhadijaDiner, AccountId = Khadija,
+            DinerId = KhadijaDiner,
+            AccountId = Khadija,
             Payments = [new PaymentInput(PaymentMethod.Account, 38m) { AccountMovementId = debitKey }],
         });
         await ReadAsync<LedgerResultDto>(await register.PostAsJsonAsync("/api/v1/register/account-movements",
@@ -151,8 +168,15 @@ public sealed class RegisterSyncTests(SqlServerFixture fixture) : ApiTestBase(fi
         var refundKey = Guid.NewGuid();
         var credit = Ticket.IssueCreditNote(sale, new CreditNoteRequest
         {
-            Id = Guid.NewGuid(), RegisterPrefix = "CAS1", Sequence = 2, PreviousHash = sale.Hash, CashSessionId = session, OperatorId = Cashier,
-            BusinessDate = Today, IssuedAt = DateTimeOffset.UtcNow, Reason = "Plat refusé",
+            Id = Guid.NewGuid(),
+            RegisterPrefix = "CAS1",
+            Sequence = 2,
+            PreviousHash = sale.Hash,
+            CashSessionId = session,
+            OperatorId = Cashier,
+            BusinessDate = Today,
+            IssuedAt = DateTimeOffset.UtcNow,
+            Reason = "Plat refusé",
             RefundPayments = [new PaymentInput(PaymentMethod.Account, -38m) { AccountMovementId = refundKey }],
         });
         (await ReadAsync<LedgerResultDto>(await register.PostAsJsonAsync("/api/v1/register/account-movements",

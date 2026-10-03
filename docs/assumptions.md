@@ -58,3 +58,25 @@ contraire et doivent être confirmées par le métier (M), la finance / l'expert
 | A46 | Photos de référence | JPEG/PNG/WebP, 5 Mo max, stockage disque local (`Storage:RootPath`) derrière `IFileStorage` (stockage blob possible sans changement de code) | `LocalFileStorage` | D |
 | A47 | Connexion de développement | Formulaire de connexion local (choix utilisateur/rôles) en Development uniquement ; refusé au démarrage en Production | Back-office | D |
 | A48 | Audit | Création/modification d'objets de gestion, prix, PIN (sans la valeur), clés de caisse, badges, mouvements manuels, imports, droits : acteur, date, avant/après, IP, corrélation ; écrit dans la même transaction que la modification | `AuditTrail` | F |
+
+## Phase 3 — Caisse, synchronisation, hors ligne
+
+| # | Sujet | Hypothèse retenue | Où | À valider |
+|---|---|---|---|---|
+| A49 | Architecture caisse | Toute la logique de la caisse (services, hors ligne, synchronisation, ViewModels MVVM) est dans `Newrest.Pos.Client.Core` (multiplateforme, testé), le projet WPF n'est qu'une couche XAML | `Client.Core` | D |
+| A50 | Ticket côté caisse | La caisse construit le ticket avec le **même code Domain** que le serveur ; le serveur le reconstruit et refuse toute différence d'empreinte | `TicketSyncMapping` | — |
+| A51 | Synchronisation montante | Une file (outbox) SQLite ordonnée, un élément par requête, idempotent côté serveur (identifiant généré par la caisse). Un refus métier **bloque** la file (ordre fiscal) jusqu'à intervention d'un responsable ; les refus « en attente d'un élément précédent » sont réessayés automatiquement | `SyncService` | D |
+| A52 | Synchronisation descendante | Incrémentale par `rowversion` (borne `MIN_ACTIVE_ROWVERSION`) ; instantané complet au premier appel, toutes les 24 h ou si un contrat change ; les menus publiés d'hier à demain sont toujours envoyés en entier | `RegisterReferenceService` | D |
+| A53 | Débit compte en ligne | Débit immédiat sur le ledger serveur (solde + découvert imposés) **avant** l'émission du ticket ; refus « solde insuffisant » = autre moyen de paiement | `SaleService` | M |
+| A54 | Débit compte hors ligne | Autorisé si solde en cache − opérations locales non synchronisées ≥ montant **et** total des débits hors ligne non synchronisés du compte sur cette caisse + montant ≤ **60 MAD** (configurable `OfflineSpendingLimitPerBadge`) | `SaleService` | M/F |
+| A55 | Subvention hors ligne | Le plafond journalier hors ligne ne tient compte que des tickets **de cette caisse** (les autres points de vente ne sont pas joignables) ; le risque est borné au plafond journalier d'un repas | `SaleService` | M/F |
+| A56 | Débit sans ticket | Cas rare : réponse perdue lors d'un débit en ligne **et** contrôle hors ligne refusé → un débit peut exister côté serveur sans ticket. À traiter par un rapport de rapprochement (phase 6) et une correction finance | — | F |
+| A57 | Avoir en caisse | Avoir total d'un ticket **de la même caisse**, validé par un responsable (rôle Supervisor/Admin), motif obligatoire, remboursement par les mêmes moyens (compte recrédité sur le ledger) | `AccountOperationsService` | M/F |
+| A58 | Recharge en caisse | Espèces ou carte ; en ligne immédiatement, sinon mise en file ; apparaît dans le Z (section « recharges, hors CA ») et dans les espèces attendues | `AccountOperationsService` | F |
+| A59 | Clôture Z | Calculée par la caisse depuis ses tickets ; le serveur la recalcule avec les tickets reçus et **refuse** toute différence (CA net, TVA, espèces attendues, dernier ticket). Comptage « à l'aveugle » puis affichage de l'écart | `CashSessionService`, `RegisterSyncService` | F |
+| A60 | Réinstallation d'une caisse | Une caisse sans ticket local reprend la séquence, l'empreinte et le numéro de Z connus du serveur | `RegisterSetupService` | F |
+| A61 | Choix du menu | Petit-déjeuner avant 10 h 30, midi avant 16 h, soir ensuite ; « journée » toujours éligible | `SaleViewModel` | M |
+| A62 | Lecteur de badge clavier | Rafale de caractères à moins de 60 ms d'intervalle terminée par Entrée, 4 à 64 caractères | `KeyboardWedgeDetector` | D |
+| A63 | Impression | ESC/POS, table WPC1252 (accents), 42 colonnes (80 mm). Une panne d'imprimante n'annule jamais la vente : le ticket est enregistré et réimprimable (« DUPLICATA ») | `EscPosEncoder` | D |
+| A64 | Clé d'appareil | Chiffrée par DPAPI (portée machine) sur le poste ; jeton caisse de 15 min renouvelé automatiquement | `DpapiDeviceKeyStore` | D |
+| A65 | Hachés de PIN en caisse | Les hachés PBKDF2 des opérateurs de la société/du site sont copiés dans la base SQLite de la caisse (connexion hors ligne) ; protéger le poste (BitLocker, compte Windows dédié) | `ReferenceSyncService` | D |

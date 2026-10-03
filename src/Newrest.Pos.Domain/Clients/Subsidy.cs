@@ -160,6 +160,7 @@ public static class SubsidyCalculator
             }
         }
 
+        amount = Money.Round(amount); // normalise the scale (rule values are stored with 4 decimals)
         return new SubsidyResult(amount, total - amount, limitation);
     }
 

@@ -98,11 +98,42 @@ Les erreurs métier (`DomainException.Code`) sont traduites en messages françai
 RFC 9457 (`application/problem+json`) avec extension `code` stable : 404 `not_found`, 403 `forbidden`,
 409 (`conflict`, `idempotency_conflict`, `already_reversed`…), 422 pour les autres règles métier.
 
+## Phase 3 — Caisse et synchronisation
+
+```
+ WPF (XAML, DPAPI, second écran, lecteur clavier)          ← Newrest.Pos.Client (Windows)
+   └── ViewModels MVVM + services de caisse                 ← Newrest.Pos.Client.Core (multiplateforme, testé)
+         ├── SQLite : cache de référence, état fiscal, tickets, mouvements, Z, outbox   ← Newrest.Pos.Client.Data
+         ├── Périphériques : ESC/POS, badge, afficheur, TPE, caméra (+ simulateurs)    ← Newrest.Pos.Devices
+         └── PosApiClient ──HTTPS──► /api/v1/register/* (jeton caisse)                  ← Newrest.Pos.Api
+```
+
+### Vente
+1. Badge → contexte en ligne (`GET register/badges/{n}` : solde frais, subvention déjà accordée aujourd'hui sur **tous**
+   les points de vente) ou, en cas d'échec réseau, contexte hors ligne (cache SQLite + tickets locaux).
+2. Subvention calculée par le Domain (`SubsidyCalculator`).
+3. Paiement compte : débit en ligne sur le ledger (solde imposé) ; hors ligne, contrôle local + plafond par badge.
+4. **Une transaction SQLite** : séquence suivante, ticket scellé (empreinte chaînée), débit hors ligne puis ticket
+   ajoutés à l'outbox, état fiscal mis à jour. Impossible de perdre un ticket ou de créer un trou, même en cas de coupure.
+5. Impression (une panne n'annule pas la vente), afficheur client, déclenchement de la synchronisation.
+
+### Synchronisation
+- **Montante** : outbox envoyée dans l'ordre (session → mouvements → tickets → Z), chaque élément idempotent.
+  Le serveur exige l'ordre des séquences, l'enchaînement des empreintes, la présence du mouvement de chaque paiement
+  compte, et reconstruit chaque ticket pour vérifier l'empreinte. Un refus définitif bloque la file (affiché en rouge).
+- **Descendante** : `GET register/reference?cursor=…` incrémental (`rowversion`), instantané complet périodique.
+- **Indicateur permanent** : en ligne / hors ligne / nombre d'éléments en attente / file bloquée.
+
+### Clôture Z
+Calculée en caisse, envoyée après tous les tickets de la session ; le serveur la recalcule et refuse un écart.
+
 ## Tests
 
 | Projet | Contenu |
 |---|---|
 | `tests/Newrest.Pos.Domain.Tests` | Subvention (plafonds repas/jour multi-sites, forfait, nb repas, sélection de règle), ledger, tickets/avoirs, chaîne, numérotation, Z, seuils vision, prix, menus, PIN/verrouillage, badges |
 | `tests/Newrest.Pos.Api.Tests` | API complète (WebApplicationFactory + SQL Server) : authentification (jetons invalides/expirés, clé de caisse, rotation, révocation, limitation de débit), périmètres et rôles, organisation, catalogue, photos, tarifs, menus (copie jour/semaine), clients, contrats, subventions, convives, badges perdus, import CSV/Excel, comptes (recharge idempotente, corrections, contre-passations, remboursements), audit |
+| `tests/Newrest.Pos.Devices.Tests` | ESC/POS (octets, accents, coupe, tiroir, TCP/fichier), détection du lecteur de badge clavier, simulateurs |
+| `tests/Newrest.Pos.Scenarios.Tests` | Caisse complète sans interface (Client.Core + SQLite + simulateurs) contre l'API réelle sur SQL Server : vente badge avec subvention → impression → synchronisation → back-office ; **20 ventes hors ligne** avec plafond atteint, retour réseau avec réponses perdues, sans doublon ; avoir + recharge + Z ; badge perdu ; caisse réinstallée ; file bloquée puis relancée ; écran de vente en 3 gestes |
 | `tests/e2e/backoffice-smoke.mjs` | Parcours navigateur (Playwright) du back-office, hors CI |
 | `tests/Newrest.Pos.Infrastructure.IntegrationTests` | SQL Server (Testcontainers) : migrations + seed, 50 débits concurrents, idempotence (séquentielle et concurrente), conflit de clé, contre-passation unique, rejeu hors ligne, aller-retour ticket + hash, altération SQL détectée, immutabilité, unicité séquence/session, Z persisté |

@@ -66,8 +66,16 @@ public sealed class AccountOperationsService(
             await using var tx = await db.Database.BeginTransactionAsync(ct);
             db.AccountMovements.Add(new LocalAccountMovement
             {
-                IdempotencyKey = dto.IdempotencyKey, AccountId = dto.AccountId, BadgeNumber = diner.Badge.Number, Type = dto.Type, Amount = amount,
-                OccurredAt = now, PaymentMethod = method.ToString(), CashSessionId = session.Id, ConfirmedOnline = !offline, Synced = !offline,
+                IdempotencyKey = dto.IdempotencyKey,
+                AccountId = dto.AccountId,
+                BadgeNumber = diner.Badge.Number,
+                Type = dto.Type,
+                Amount = amount,
+                OccurredAt = now,
+                PaymentMethod = method.ToString(),
+                CashSessionId = session.Id,
+                ConfirmedOnline = !offline,
+                Synced = !offline,
             });
             if (offline)
             {
@@ -136,8 +144,15 @@ public sealed class AccountOperationsService(
         // Dry run before touching the ledger.
         var request = new CreditNoteRequest
         {
-            Id = Guid.CreateVersion7(), RegisterPrefix = profile.TicketPrefix, Sequence = 1, PreviousHash = TicketHasher.GenesisHash,
-            CashSessionId = session.Id, OperatorId = supervisor.Id, BusinessDate = session.BusinessDate, IssuedAt = now, Reason = reason,
+            Id = Guid.CreateVersion7(),
+            RegisterPrefix = profile.TicketPrefix,
+            Sequence = 1,
+            PreviousHash = TicketHasher.GenesisHash,
+            CashSessionId = session.Id,
+            OperatorId = supervisor.Id,
+            BusinessDate = session.BusinessDate,
+            IssuedAt = now,
+            Reason = reason,
             RefundPayments = refunds,
         };
         Ticket.IssueCreditNote(original, request);
@@ -167,8 +182,15 @@ public sealed class AccountOperationsService(
             {
                 db.AccountMovements.Add(new LocalAccountMovement
                 {
-                    IdempotencyKey = refund.IdempotencyKey, AccountId = refund.AccountId, Type = refund.Type, Amount = refund.Amount, OccurredAt = now,
-                    TicketId = credit.Id, CashSessionId = session.Id, ConfirmedOnline = !offline, Synced = !offline,
+                    IdempotencyKey = refund.IdempotencyKey,
+                    AccountId = refund.AccountId,
+                    Type = refund.Type,
+                    Amount = refund.Amount,
+                    OccurredAt = now,
+                    TicketId = credit.Id,
+                    CashSessionId = session.Id,
+                    ConfirmedOnline = !offline,
+                    Synced = !offline,
                 });
                 if (offline)
                 {

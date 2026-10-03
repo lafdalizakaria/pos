@@ -77,7 +77,43 @@ recevoir un périmètre (menu **Droits d'accès**, en tant qu'administrateur).
 
 Back-office → **Convives & badges** → rechercher le convive (nom, matricule ou n° de badge) → **Déclarer perdu** →
 saisir le numéro du nouveau badge. L'ancien badge est bloqué immédiatement, le solde reste sur le compte. Les caisses
-reçoivent le blocage à la prochaine synchronisation (phase 3).
+reçoivent le blocage à la prochaine synchronisation (5 min, ou bouton **Synchroniser**).
+
+## Installer une caisse (poste Windows)
+
+1. Back-office : créer la caisse et **émettre une clé** (voir « Ajouter une caisse »), noter l'identifiant de la caisse.
+2. Poste : publier/copier `Newrest.Pos.Caisse` (installeur MSIX en phase 6) ; renseigner `appsettings.json` :
+   `Register:ServerUrl` (HTTPS), `Register:DataFolder` (par défaut `C:\ProgramData\Newrest\POS`), périphériques
+   (`Devices:Printer` = `EscPosSpooler` + nom de l'imprimante Windows, ou `EscPosTcp` + `ip:9100` ; `Devices:BadgeReader`
+   = `Keyboard` ou `Serial` + port ; `Devices:CustomerDisplay` = `Window` si second écran à droite).
+3. Premier lancement : écran **Enregistrement de la caisse** → adresse du serveur, identifiant, clé. La clé est chiffrée
+   par DPAPI sur le poste ; les données de référence sont téléchargées.
+4. Connexion opérateur (code + PIN), ouverture de caisse (fond), vente.
+
+## Panne réseau
+
+- La caisse continue : catalogue, menus, badges et soldes sont en cache ; bandeau rouge « Hors ligne — n en attente ».
+- Paiement par compte limité au plafond hors ligne par badge (60 MAD par défaut) ; au-delà, espèces ou carte.
+- Au retour du réseau, la file se vide automatiquement (toutes les 10 s, ou bouton **Synchroniser**) ; aucun doublon
+  possible (idempotence serveur).
+- Contrôle : back-office → **Clôtures Z & intégrité** → *Vérifier* la caisse.
+
+## File de synchronisation bloquée (bandeau « Synchronisation bloquée »)
+
+Un élément a été refusé par le serveur (caisse désactivée, empreinte invalide…). Les éléments suivants attendent
+(ordre fiscal). Lire l'erreur dans le journal de la caisse (`logs/caisse-*.log`), corriger la cause (ex. réactiver la
+caisse), puis un responsable relance l'envoi (`RetryRejected`, bouton à exposer dans l'écran responsable en phase 6).
+Ne **jamais** supprimer la base SQLite d'une caisse dont la file n'est pas vide.
+
+## Avoir
+
+Caisse → **Historique** → sélectionner le ticket → motif → **Avoir (responsable)** (opérateur Responsable connecté).
+Avoir total, numéroté dans la séquence de la caisse, remboursé par les mêmes moyens (compte recrédité).
+
+## Clôture de caisse
+
+Caisse → **Clôture** → compter les espèces → *Calculer l'écart* → **Clôturer et imprimer le Z**. Le Z est envoyé au
+serveur après tous les tickets ; le serveur le recalcule. Une nouvelle session peut ensuite être ouverte.
 
 ## Tests
 
@@ -85,6 +121,8 @@ reçoivent le blocage à la prochaine synchronisation (phase 3).
 dotnet test tests/Newrest.Pos.Domain.Tests                     # unitaires (rapides)
 dotnet test tests/Newrest.Pos.Infrastructure.IntegrationTests  # nécessite Docker (SQL Server via Testcontainers)
 dotnet test tests/Newrest.Pos.Api.Tests                         # API complète, nécessite Docker
+dotnet test tests/Newrest.Pos.Devices.Tests                     # périphériques
+dotnet test tests/Newrest.Pos.Scenarios.Tests                   # caisse de bout en bout (hors ligne inclus), nécessite Docker
 node tests/e2e/backoffice-smoke.mjs                             # parcours navigateur, voir tests/e2e/README.md
 ```
 

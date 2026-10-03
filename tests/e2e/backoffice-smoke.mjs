@@ -47,6 +47,8 @@ await visit(admin, 'clients', 'Atlas Automotive', null);
 await visit(admin, 'convives', 'Benali', null);
 await visit(admin, 'comptes', 'Benali', null);
 await visit(admin, 'audit', 'Journal', null);
+await visit(admin, 'tickets', 'Tickets', null);
+await visit(admin, 'clotures', 'intégrité', null);
 await visit(admin, 'droits', 'Attribuer', null);
 
 async function step(name, fn) { try { await fn(); } catch (e) { results.push(`FAIL ${name}: ${e.message.split('\n')[0]}`); await admin.screenshot({ path: `${shots}/fail-${name}.png`, fullPage: true }).catch(() => {}); } }

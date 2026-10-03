@@ -162,15 +162,23 @@ public sealed partial class SaleService(
             }
 
             ticket = Ticket.Issue(BuildRequest(cart, payments, cashier, session, profile, subsidy.EmployerShare, movementKey,
-                TicketNumber.Next(state.LastSequence), state.LastHash) with { IssuedAt = now });
+                TicketNumber.Next(state.LastSequence), state.LastHash) with
+            { IssuedAt = now });
             var dto = ticket.ToSyncDto();
             if (movement is not null)
             {
                 db.AccountMovements.Add(new LocalAccountMovement
                 {
-                    IdempotencyKey = movement.IdempotencyKey, AccountId = movement.AccountId, BadgeNumber = diner!.Badge.Number,
-                    Type = movement.Type, Amount = movement.Amount, OccurredAt = now, TicketId = ticket.Id, CashSessionId = session.Id,
-                    ConfirmedOnline = !offline, Synced = !offline,
+                    IdempotencyKey = movement.IdempotencyKey,
+                    AccountId = movement.AccountId,
+                    BadgeNumber = diner!.Badge.Number,
+                    Type = movement.Type,
+                    Amount = movement.Amount,
+                    OccurredAt = now,
+                    TicketId = ticket.Id,
+                    CashSessionId = session.Id,
+                    ConfirmedOnline = !offline,
+                    Synced = !offline,
                 });
                 if (offline)
                 {
@@ -259,10 +267,21 @@ public sealed partial class SaleService(
 
     internal static LocalTicket ToLocal(Ticket ticket, TicketSyncDto dto) => new()
     {
-        Id = ticket.Id, Sequence = ticket.Sequence, Number = ticket.Number, Kind = ticket.Kind.ToString(), CashSessionId = ticket.CashSessionId,
-        BusinessDate = ticket.BusinessDate, IssuedAt = ticket.IssuedAt, DinerId = ticket.DinerId, BadgeNumber = ticket.BadgeNumber,
-        TotalAmount = ticket.TotalAmount, SubsidyAmount = ticket.SubsidyAmount, DinerShare = ticket.DinerShare,
-        CreditedTicketId = ticket.CreditedTicketId, Hash = ticket.Hash, Json = JsonSerializer.Serialize(dto, LocalStore.Json),
+        Id = ticket.Id,
+        Sequence = ticket.Sequence,
+        Number = ticket.Number,
+        Kind = ticket.Kind.ToString(),
+        CashSessionId = ticket.CashSessionId,
+        BusinessDate = ticket.BusinessDate,
+        IssuedAt = ticket.IssuedAt,
+        DinerId = ticket.DinerId,
+        BadgeNumber = ticket.BadgeNumber,
+        TotalAmount = ticket.TotalAmount,
+        SubsidyAmount = ticket.SubsidyAmount,
+        DinerShare = ticket.DinerShare,
+        CreditedTicketId = ticket.CreditedTicketId,
+        Hash = ticket.Hash,
+        Json = JsonSerializer.Serialize(dto, LocalStore.Json),
     };
 
     internal async Task<string?> TryPrintAsync(ReceiptDocument receipt, CancellationToken ct)

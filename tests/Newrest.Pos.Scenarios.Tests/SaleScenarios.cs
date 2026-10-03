@@ -271,4 +271,35 @@ public sealed class SaleScenarios(SqlServerFixture fixture) : IAsyncLifetime
         screen.Search = "";
         screen.Groups.Count.Should().BeGreaterThan(water);
     }
+
+    [Fact]
+    public async Task Permanent_refusal_blocks_the_queue_until_a_supervisor_retries()
+    {
+        await using var register = await RegisterHarness.CreateAsync(_api, Cas1);
+        var (cashier, session) = await register.LoginAndOpenAsync();
+        await register.Get<SyncService>().RunOnceAsync();
+
+        // The register is deactivated in the back-office while it still sells (its token is still valid).
+        var registers = await GetAsync<List<RegisterDto>>($"/api/v1/registers?pointOfSaleId={DemoDataSeeder.Id("pos:CAS-SELF")}");
+        var cas1 = registers.Single(r => r.Id == Cas1);
+        (await _api.Admin().PutAsJsonAsync($"/api/v1/registers/{Cas1}", new RegisterUpsert(cas1.PointOfSaleId, cas1.Code, cas1.Name, cas1.TicketPrefix, false)))
+            .EnsureSuccessStatusCode();
+        await register.Get<SaleService>().CompleteSaleAsync(await register.CartAsync(session, "PAIN"), [new PaymentChoice(PaymentMethod.Cash, 1.5m)], cashier, session);
+        await register.Get<SyncService>().RunOnceAsync();
+
+        var status = register.Get<ConnectivityState>();
+        status.BlockingError.Should().Contain("Ticket refusé");
+        status.Label.Should().StartWith("Synchronisation bloquée");
+        status.PendingCount.Should().Be(1);
+        await register.Get<SyncService>().RunOnceAsync();
+        status.PendingCount.Should().Be(1, "a refused fiscal item is never skipped");
+
+        (await _api.Admin().PutAsJsonAsync($"/api/v1/registers/{Cas1}", new RegisterUpsert(cas1.PointOfSaleId, cas1.Code, cas1.Name, cas1.TicketPrefix, true)))
+            .EnsureSuccessStatusCode();
+        await register.Get<SyncService>().RetryRejectedAsync();
+        await DrainAsync(register);
+        status.BlockingError.Should().BeNull();
+        (await GetAsync<ChainVerificationDto>($"/api/v1/registers/{Cas1}/chain-verification")).TicketsChecked.Should().Be(1);
+    }
 }
+

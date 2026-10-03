@@ -69,6 +69,16 @@ public class SubsidyCalculatorTests
     }
 
     [Fact]
+    public void Result_has_a_two_decimal_scale_even_with_four_decimal_rule_values()
+    {
+        var rule = Rule(SubsidyKind.FixedAmount, 25.0000m);
+
+        var result = SubsidyCalculator.Calculate(rule, new SubsidyRequest(38m, 38m, 0m, 0));
+
+        result.EmployerShare.ToString(System.Globalization.CultureInfo.InvariantCulture).Should().Be("25.00");
+    }
+
+    [Fact]
     public void Fixed_amount_never_exceeds_eligible_amount()
     {
         var rule = Rule(SubsidyKind.FixedAmount, 30m);

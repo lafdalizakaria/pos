@@ -36,7 +36,11 @@ public sealed class CashSessionService(
         var now = clock.GetUtcNow();
         var session = new LocalCashSession
         {
-            Id = Guid.CreateVersion7(), OperatorId = operatorId, OpenedAt = now, BusinessDate = Today(), OpeningFloat = openingFloat,
+            Id = Guid.CreateVersion7(),
+            OperatorId = operatorId,
+            OpenedAt = now,
+            BusinessDate = Today(),
+            OpeningFloat = openingFloat,
             Status = LocalSessionStatus.Open,
         };
 
@@ -83,8 +87,14 @@ public sealed class CashSessionService(
             z = await ComputeAsync(db, session, state.LastZNumber + 1, countedCash, now, ct);
             var dto = new ZReportSyncDto(z.Id, session.Id, z.ZNumber, now, countedCash, operatorId, forced, z.LastTicketSequence, z.NetSales, z.TotalVat,
                 z.ExpectedCash);
-            db.ZReports.Add(new LocalZReport { Id = z.Id, CashSessionId = session.Id, ZNumber = z.ZNumber, GeneratedAt = now,
-                Json = JsonSerializer.Serialize(dto, LocalStore.Json) });
+            db.ZReports.Add(new LocalZReport
+            {
+                Id = z.Id,
+                CashSessionId = session.Id,
+                ZNumber = z.ZNumber,
+                GeneratedAt = now,
+                Json = JsonSerializer.Serialize(dto, LocalStore.Json)
+            });
             var tracked = await db.CashSessions.SingleAsync(s => s.Id == session.Id, ct);
             tracked.Status = LocalSessionStatus.Closed;
             tracked.ClosedAt = now;

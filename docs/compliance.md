@@ -10,9 +10,17 @@
 | Numérotation continue sans trou par caisse | Séquence générée par la caisse, unique en base (`RegisterId`, `Sequence`), détection des trous (`TicketNumber.FindGaps`, `TicketChainVerifier`) | Phase 1 ✔ |
 | Inaltérabilité des tickets | Entités immuables (aucun setter public), intercepteur EF qui refuse toute modification/suppression, `DENY UPDATE, DELETE` SQL pour le compte applicatif (`deploy/sql/least-privilege.sql`) | Phase 1 ✔ |
 | Correction uniquement par avoir | `Ticket.IssueCreditNote` (avoir lié, motif obligatoire, même séquence) | Phase 1 ✔ (avoir total) |
-| Intégrité / traçabilité | Chaîne SHA-256 : chaque ticket contient le hash du précédent de la même caisse ; vérification (altération, suppression, insertion, doublon) | Phase 1 ✔ ; écran back-office en phase 2 |
-| Clôture journalière (Z) | Z numéroté par caisse, totaux par moyen de paiement, par taux de TVA, subventions, recharges, écart de caisse, hash du dernier ticket | Phase 1 ✔ (calcul) ; impression en phase 3 |
+| Intégrité / traçabilité | Chaîne SHA-256 : chaque ticket contient le hash du précédent de la même caisse ; vérification (altération, suppression, insertion, doublon) ; le serveur refuse tout ticket hors séquence ou dont l'empreinte ne correspond pas | Phase 3 ✔ (écran « Clôtures Z & intégrité ») ; altération SQL directe détectée lors de la recette |
+| Clôture journalière (Z) | Z numéroté par caisse, totaux par moyen de paiement, par taux de TVA, subventions, recharges, écart de caisse, hash du dernier ticket ; recalculé et contrôlé par le serveur | Phase 3 ✔ (caisse, impression, serveur) |
 | Journal des actions sensibles | `AuditLog` immuable | Modèle phase 1 ; alimentation phase 2 |
+
+## 1 bis. Mentions imprimées aujourd'hui sur le ticket
+
+Raison sociale, site et adresse, ICE, IF, RC, « TICKET » ou « AVOIR » + numéro (et motif), date et heure locales,
+caisse, caissier, convive (si badge), lignes (quantité, libellé, montant), base HT et TVA par taux, total TTC,
+subvention employeur et part convive, paiements (espèces reçues et rendu, carte avec autorisation, compte convive),
+solde du compte, 16 premiers caractères de l'empreinte, mention « DUPLICATA » sur les réimpressions.
+Les recharges impriment un « REÇU DE RECHARGE (n'est pas une facture) ».
 
 ## 2. Questions ouvertes pour l'expert-comptable / la DGI
 

@@ -40,8 +40,10 @@ jobs:
       - name: Build (warnings as errors, .NET analyzers)
         run: dotnet build Newrest.Pos.slnx --no-restore -c Release
 
-      - name: Check that the EF model matches the migrations
-        run: dotnet ef migrations has-pending-model-changes -p src/Newrest.Pos.Infrastructure -s src/Newrest.Pos.Infrastructure --no-build --configuration Release
+      - name: Check that the EF models (server and register) match the migrations
+        run: |
+          dotnet ef migrations has-pending-model-changes -p src/Newrest.Pos.Infrastructure -s src/Newrest.Pos.Infrastructure --no-build --configuration Release
+          dotnet ef migrations has-pending-model-changes -p src/Newrest.Pos.Client.Data -s src/Newrest.Pos.Client.Data --no-build --configuration Release
 
       - name: Unit tests (with coverage)
         run: >
@@ -49,13 +51,31 @@ jobs:
           --collect:"XPlat Code Coverage" --results-directory ./TestResults/unit
           --logger "trx;LogFileName=unit.trx"
 
+      - name: Device tests (ESC/POS, badge readers, simulators)
+        run: >
+          dotnet test tests/Newrest.Pos.Devices.Tests --no-build --configuration Release
+          --results-directory ./TestResults/devices --logger "trx;LogFileName=devices.trx"
+
       - name: Integration tests (SQL Server via Testcontainers)
         run: >
           dotnet test tests/Newrest.Pos.Infrastructure.IntegrationTests --no-build --configuration Release
           --results-directory ./TestResults/integration --logger "trx;LogFileName=integration.trx"
 
-      - name: Coverage gate (Domain >= 80 % lines)
-        run: python3 deploy/ci/coverage_gate.py ./TestResults/unit 0.80
+      - name: API tests (WebApplicationFactory + SQL Server, with coverage)
+        run: >
+          dotnet test tests/Newrest.Pos.Api.Tests --no-build --configuration Release
+          --collect:"XPlat Code Coverage" --results-directory ./TestResults/api
+          --logger "trx;LogFileName=api.trx"
+
+      - name: End-to-end register scenarios (headless register + API + SQL Server, offline, recovery)
+        run: >
+          dotnet test tests/Newrest.Pos.Scenarios.Tests --no-build --configuration Release
+          --results-directory ./TestResults/scenarios --logger "trx;LogFileName=scenarios.trx"
+
+      - name: Coverage gates (Domain and Application >= 80 % lines)
+        run: |
+          python3 deploy/ci/coverage_gate.py ./TestResults/unit 0.80 Newrest.Pos.Domain
+          python3 deploy/ci/coverage_gate.py ./TestResults/api 0.80 Newrest.Pos.Application
 
       - uses: actions/upload-artifact@v4
         if: always()
