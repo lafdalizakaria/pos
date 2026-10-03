@@ -35,6 +35,7 @@ public sealed class ApiFactory(string connectionString, string storageRoot) : We
         builder.UseSetting("Storage:RootPath", storageRoot);
         builder.UseSetting("Security:PinHashIterations", "1000");
         builder.UseSetting("Supervision:JobsEnabled", "false");
+        builder.UseSetting("Archive:AllowEphemeralKey", "true");
         builder.UseSetting("Serilog:MinimumLevel:Default", "Warning");
     }
 }

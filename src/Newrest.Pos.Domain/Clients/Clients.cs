@@ -167,6 +167,22 @@ public sealed class Diner : ReferenceEntity
     public bool IsActive { get; set; }
 
     public string DisplayName => $"{FirstName} {LastName}";
+
+    public bool IsAnonymized => EmployeeNumber.StartsWith(AnonymizedPrefix, StringComparison.Ordinal);
+
+    public const string AnonymizedPrefix = "ANON-";
+
+    /// <summary>Privacy (law 09-08): removes the identity of a diner who left. Fiscal tickets keep their immutable references.</summary>
+    public void Anonymize()
+    {
+        var token = Id.ToString("N")[..12].ToUpperInvariant();
+        FirstName = "Anonymisé";
+        LastName = token;
+        EmployeeNumber = AnonymizedPrefix + token;
+        Category = null;
+        IsActive = false;
+    }
+
 }
 
 public enum BadgeStatus
@@ -202,6 +218,9 @@ public sealed class Badge : ReferenceEntity
     public bool IsUsable => Status == BadgeStatus.Active;
 
     public static string NormalizeNumber(string number) => Guard.NotBlank(number, nameof(number), 64).ToUpperInvariant();
+
+    /// <summary>The physical badge number is personal data once its holder has left: replaced by a neutral identifier.</summary>
+    public void Anonymize() => Number = Diner.AnonymizedPrefix + Id.ToString("N")[..16].ToUpperInvariant();
 
     public void Block(DateTimeOffset now) => Deactivate(BadgeStatus.Blocked, now);
 

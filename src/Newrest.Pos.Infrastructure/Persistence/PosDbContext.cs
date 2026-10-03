@@ -53,6 +53,7 @@ public sealed class PosDbContext(DbContextOptions<PosDbContext> options) : DbCon
     public DbSet<RegisterVisionStatus> RegisterVisionStatuses => Set<RegisterVisionStatus>();
     public DbSet<Domain.Operations.RegisterHeartbeat> RegisterHeartbeats => Set<Domain.Operations.RegisterHeartbeat>();
     public DbSet<Domain.Operations.IntegrityCheck> IntegrityChecks => Set<Domain.Operations.IntegrityCheck>();
+    public DbSet<Domain.Operations.ArchiveRecord> ArchiveRecords => Set<Domain.Operations.ArchiveRecord>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)

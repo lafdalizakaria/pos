@@ -28,3 +28,14 @@ public interface IFileStorage
 
     Task DeleteAsync(string key, CancellationToken cancellationToken = default);
 }
+
+/// <summary>Signs fiscal archives (ECDSA P-256; private key held by the server configuration / key vault).</summary>
+public interface IArchiveSigner
+{
+    /// <summary>First 16 hex characters of the SHA-256 of the public key (SubjectPublicKeyInfo).</summary>
+    string KeyId { get; }
+
+    string PublicKeyPem { get; }
+
+    byte[] Sign(byte[] data);
+}

@@ -92,6 +92,7 @@ backOffice.MapAccountEndpoints();
 backOffice.MapSalesEndpoints();
 backOffice.MapVisionEndpoints();
 backOffice.MapSupervisionEndpoints();
+backOffice.MapComplianceEndpoints();
 
 await app.RunAsync();
 

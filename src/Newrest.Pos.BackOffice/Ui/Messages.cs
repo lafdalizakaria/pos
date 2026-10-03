@@ -39,6 +39,12 @@ public static class Messages
         ["no_published_model"] = "Aucun modèle publié : publier un modèle avant de choisir YOLO ou hybride.",
         ["model_not_published"] = "Seul un modèle publié peut être déployé.",
         ["invalid_thresholds"] = "Seuils invalides : 0 ≤ seuil bas ≤ seuil haut ≤ 1.",
+        ["period_not_closed"] = "Mois pas encore archivable : attendre quelques jours après la fin du mois (synchronisation des caisses).",
+        ["integrity_failed"] = "Chaîne d'intégrité rompue sur une caisse : le mois ne peut pas être scellé (voir Supervision).",
+        ["archive_key_missing"] = "Aucune clé de signature des archives n'est configurée (Archive:SigningKeyPem).",
+        ["archive_missing"] = "Le fichier de l'archive est introuvable dans le stockage.",
+        ["cutoff_too_recent"] = "La date doit être antérieure d'au moins 3 mois (facturation, contestations).",
+        ["use_credit_note"] = "Une consommation s'annule par un avoir sur son ticket (contre-passation possible seulement pour un débit sans ticket).",
     };
 
     public static string For(Exception exception) => exception switch

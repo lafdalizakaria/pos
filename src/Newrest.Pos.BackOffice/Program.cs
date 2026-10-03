@@ -63,6 +63,8 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = c => c
 app.MapAccountEndpoints();
 app.MapGet("/photos/{id:guid}", async (Guid id, CatalogService catalog, CancellationToken ct) =>
     await catalog.OpenPhotoAsync(id, ct) is { } photo ? Results.Stream(photo.Content, photo.ContentType) : Results.NotFound());
+app.MapGet("/archives/{id:guid}", async (Guid id, Newrest.Pos.Application.Compliance.ArchiveService archives, CancellationToken ct) =>
+    await archives.OpenAsync(id, ct) is { } file ? Results.File(file.Content, "application/zip", file.FileName) : Results.NotFound());
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 
 await app.RunAsync();

@@ -33,6 +33,8 @@ public static class DependencyInjection
         services.AddScoped<Vision.RecognitionService>();
         services.AddScoped<Vision.VisionModelService>();
         services.AddScoped<Operations.SupervisionService>();
+        services.AddScoped<Compliance.ArchiveService>();
+        services.AddScoped<Compliance.PrivacyService>();
         services.TryAddSingleton(new Domain.Operations.SupervisionThresholds());
         return services;
     }

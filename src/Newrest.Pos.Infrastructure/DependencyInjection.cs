@@ -30,6 +30,8 @@ public static class DependencyInjection
         services.AddScoped<IRowVersionSource, SqlRowVersionSource>();
         services.Configure<FileStorageOptions>(configuration.GetSection(FileStorageOptions.Section));
         services.AddSingleton<IFileStorage, LocalFileStorage>();
+        services.AddSingleton<IArchiveSigner>(_ => new Compliance.EcdsaArchiveSigner(configuration["Archive:SigningKeyPem"],
+            configuration.GetValue("Archive:AllowEphemeralKey", false)));
         services.AddSingleton<IPinHasher>(_ => new Pbkdf2PinHasher(
             configuration.GetValue("Security:PinHashIterations", Pbkdf2PinHasher.DefaultIterations)));
         return services;

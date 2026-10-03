@@ -25,3 +25,17 @@ internal sealed class IntegrityCheckConfiguration : IEntityTypeConfiguration<Int
         b.HasIndex(x => new { x.RegisterId, x.CheckedAt });
     }
 }
+
+internal sealed class ArchiveRecordConfiguration : IEntityTypeConfiguration<ArchiveRecord>
+{
+    public void Configure(EntityTypeBuilder<ArchiveRecord> b)
+    {
+        b.Property(x => x.StoragePath).HasMaxLength(500);
+        b.Property(x => x.Sha256).HasMaxLength(64).IsFixedLength();
+        b.Property(x => x.KeyId).HasMaxLength(64);
+        b.Property(x => x.CreatedBy).HasMaxLength(256);
+        b.Property(x => x.CheckpointsJson).HasMaxLength(-1);
+        b.HasOne<Company>().WithMany().HasForeignKey(x => x.CompanyId);
+        b.HasIndex(x => new { x.CompanyId, x.Year, x.Month }).IsUnique();
+    }
+}

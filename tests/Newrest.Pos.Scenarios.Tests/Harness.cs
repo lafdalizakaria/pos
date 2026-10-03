@@ -49,6 +49,7 @@ public sealed class ApiFactory(string connectionString, Action<IWebHostBuilder>?
         builder.UseSetting("Storage:RootPath", StoragePath);
         builder.UseSetting("Security:PinHashIterations", "1000");
         builder.UseSetting("Supervision:JobsEnabled", "false");
+        builder.UseSetting("Archive:AllowEphemeralKey", "true");
         configure?.Invoke(builder);
         builder.UseSetting("Serilog:MinimumLevel:Default", "Warning");
     }

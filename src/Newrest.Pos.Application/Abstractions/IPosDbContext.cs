@@ -44,6 +44,8 @@ public interface IPosDbContext
     DbSet<Domain.Operations.RegisterHeartbeat> RegisterHeartbeats { get; }
 
     DbSet<Domain.Operations.IntegrityCheck> IntegrityChecks { get; }
+
+    DbSet<Domain.Operations.ArchiveRecord> ArchiveRecords { get; }
     DbSet<CashSession> CashSessions { get; }
     DbSet<ZReport> ZReports { get; }
     DbSet<AuditLog> AuditLogs { get; }
