@@ -24,6 +24,8 @@ from app.models import Candidate
 from app.providers.base import ProviderUnavailableError, RawDetection
 from app.secrets import gemini_key
 
+MIN_API_DEADLINE_MS = 10_000
+
 PROMPT = """Tu es le système de reconnaissance d'une caisse de restaurant d'entreprise au Maroc.
 La photo montre un plateau vu du dessus. Identifie chaque article présent (plat, entrée, dessert, boisson, pain...),
 uniquement parmi la liste des articles du menu du jour ci-dessous (codes autorisés).
@@ -111,7 +113,8 @@ class GeminiProvider:
             temperature=settings.gemini_temperature,
             response_mime_type="application/json",
             response_json_schema=build_schema([c.article_code for c in candidates]),
-            http_options=types.HttpOptions(timeout=int(settings.request_timeout_s * 1000)),
+            # The API rejects deadlines under 10 s; the real limit is enforced by asyncio.wait_for in main.recognize.
+            http_options=types.HttpOptions(timeout=max(MIN_API_DEADLINE_MS, int(settings.request_timeout_s * 1000))),
             thinking_config=types.ThinkingConfig(thinking_budget=settings.gemini_thinking_budget)
             if settings.gemini_thinking_budget is not None
             else None,

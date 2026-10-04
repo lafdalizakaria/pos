@@ -70,6 +70,15 @@ def test_request_uses_schema_low_temperature_and_resized_image(gemini_settings):
     assert len(images) == 1 + 2  # tray + at most 2 reference photos per candidate
 
 
+def test_api_deadline_is_never_below_the_10_s_minimum(gemini_settings):
+    image = prepare(make_jpeg(64, 64), gemini_settings.image_max_side)
+    provider = GeminiProvider(lambda s: None)
+    _, config = provider.build_request(image, candidates(), gemini_settings.model_copy(update={"request_timeout_s": 5.0}))
+    assert config.http_options.timeout == 10_000
+    _, config = provider.build_request(image, candidates(), gemini_settings.model_copy(update={"request_timeout_s": 15.0}))
+    assert config.http_options.timeout == 15_000
+
+
 async def test_recognize_converts_gemini_boxes(gemini_settings):
     from pydantic import SecretStr
 
