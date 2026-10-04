@@ -268,7 +268,7 @@ Voir `docs/assumptions.md` A66–A81. Points saillants à valider :
 - Phase 5 : entraînement YOLO sur le dataset collecté, providers YOLO et Hybrid, déploiement des modèles depuis le
   serveur, calibration des confiances.
 
-## Phase 5 — Entraînement YOLO, providers YOLO/Hybride, déploiement des modèles ✅ (en attente de validation)
+## Phase 5 — Entraînement YOLO, providers YOLO/Hybride, déploiement des modèles ✅ (validée)
 
 ### Livré
 
@@ -326,4 +326,69 @@ Voir `docs/assumptions.md` A82–A95. Points saillants à valider :
 - Stockage d'entraînement central (conteneur, droits, durée de conservation) à provisionner.
 - Phase 6 : durcissement, installeurs, supervision, runbook complet, tests de charge, checklist pilote.
 
-## Phase 6 — Production (à venir)
+## Phase 6 — Production ✅ (en attente de validation)
+
+### Livré
+
+**Supervision** (back-office *Supervision*, webhook Teams/Slack, métriques OpenTelemetry `pos.*`)
+- Battement de cœur des caisses (version, file, blocage, session, sauvegarde), alertes calculées (caisse ouverte muette,
+  file bloquée ou en retard, Z non fait, sauvegarde absente, chaîne invalide ou non vérifiée, débit sans ticket,
+  découvert hors ligne, vision), notification dédupliquée.
+- **Vérification nocturne de toutes les chaînes** (par lots), historique, bouton « vérifier maintenant ».
+- **Rapprochement** : débits de compte sans ticket (contre-passation finance désormais possible dans ce seul cas), ventes
+  hors ligne au-delà du découvert, tickets reçus en retard.
+
+**Conformité** (back-office *Archives & conformité*)
+- **Archives mensuelles signées ECDSA** : tickets recalculables, originaux des avoirs, Z, mouvements, points de contrôle
+  de chaque caisse ; continuité d'une archive à l'autre ; refus de sceller une chaîne rompue ; re-vérification serveur et
+  **vérification hors ligne** `Newrest.Pos.Migrator --verify-archive`.
+- **Anonymisation** des convives partis (simulation puis exécution, journalisée).
+
+**Caisse** : sauvegardes SQLite cohérentes (quotidienne + après chaque Z, 7 gardées), écran **Responsable** (file en
+attente, relance après refus, sauvegarde immédiate), **clôture forcée**, version et état vision dans la barre d'état.
+
+**Durcissement et livraison**
+- Démarrage **refusé en production** si la configuration est incomplète ou de développement (`sa`, SQL non chiffré,
+  secrets absents, clé éphémère, connexion de développement, PIN faibles) — tous les problèmes listés d'un coup.
+- En-têtes de sécurité (CSP stricte du back-office, HSTS, X-Frame-Options…), cookies `Secure`, en-têtes de proxy filtrés.
+- **Images Docker** non root (API, back-office, migrateur), compose de production + modèle de configuration ;
+  **paquet caisse** autonome (zip + `install-register.ps1`, mise à jour conservant données et clé).
+- CI : audit des vulnérabilités NuGet et Python, images construites et refus de configuration vérifié, paquet caisse
+  publié en artefact, couverture des scénarios ; Dependabot.
+- **Outil de charge** `tools/Newrest.Pos.LoadTest` et résultats (`load-test.md`).
+- Documentation : `runbook.md` complet (déploiement, alertes, sauvegardes/restauration, archives, rotation des secrets),
+  `pilot-checklist.md`, `security.md`, `deploy/sql/maintenance.sql`.
+
+### Vérifications effectuées
+
+| Vérification | Résultat |
+|---|---|
+| Build Release (avertissements = erreurs), `dotnet format`, modèles EF ↔ migrations, `ruff`, audit NuGet + `pip-audit` | ✅ aucune vulnérabilité connue |
+| Domain 119 · Devices 9 · Intégration 16 · API 33 · Scénarios **30** · vision 65 (+2 entraînement) | ✅ 207 tests .NET |
+| **Falsification SQL d'un ticket → alerte critique → webhook** (une seule fois) ; débit sans ticket → rapprochement → contre-passation ; file bloquée ; périmètres | ✅ |
+| **Archives** : création, vérification serveur et par le Migrator (code 0), falsification détectée (empreinte de fichier, signature, contenu recalculé), ticket arrivé après l'archivage repris dans l'archive suivante avec continuité de chaîne | ✅ |
+| Images Docker construites ; **conteneur API refusant une configuration de développement** en production ; migrateur conteneurisé sur base neuve ; API conteneurisée saine avec en-têtes de sécurité | ✅ |
+| Paquet caisse Windows construit sous Linux (exécutable autonome + service vision + scripts, empreinte SHA-256) | ✅ |
+| **Charge** (API 2 vCPU/1 Go) : 60 caisses à 6× la pointe réelle → p95 < 60 ms ; 100 caisses sans pause → ~10 000 plateaux/min, **0 erreur** ; 7 838 tickets vérifiés intègres en 0,9 s | ✅ |
+| Back-office dans le navigateur avec CSP : 30/30 étapes, aucune violation CSP | ✅ |
+| Couverture | ✅ Domain 89,4 % ; Application 94,3 % (API + scénarios) ; Client.Core 77,8 % |
+| Scripts PowerShell (installation caisse et service vision), WPF, NSSM, DPAPI, Intune | ⚠️ Windows requis : non exécutés ici |
+| Workflows GitHub (CI, entraînement, Dependabot) | ⚠️ non exécutés sur GitHub ; étapes rejouées en local |
+| Charge sur l'infrastructure cible, restauration SQL réelle, test d'intrusion | ⚠️ à faire (checklist pilote) |
+
+Défauts trouvés et corrigés : **limite de demandes de jeton (20/min/IP) qui aurait bloqué un site entier derrière une même
+adresse publique** (trouvé par le test de charge) ; sauvegardes de la même seconde qui s'écrasaient ; script de recette
+du back-office dépendant du jour de la semaine ; une consommation sans ticket ne pouvait pas être annulée par la finance.
+
+### Décisions prises
+Voir `docs/assumptions.md` A96–A109. Points saillants à valider :
+- Archives : une par société et par mois, à partir du 3 du mois suivant, format JSON + manifeste signé — **à faire
+  valider par l'expert-comptable / la DGI** (avec la durée et le support de conservation).
+- Contre-passation d'un débit sans ticket par la finance (exception à la règle « une consommation s'annule par avoir »).
+- Livraison caisse en zip + PowerShell (Intune/SCCM) plutôt que MSIX.
+- Seuils d'alerte par défaut (30 min, 50 éléments, 20 h, 30 h, 36 h, 2 h).
+
+### Reste à faire avant la généralisation
+- Dérouler `pilot-checklist.md` (décisions fiscales et CNDP, infrastructure, recette sur site).
+- Recette Windows réelle (WPF, périphériques, installation, Intune) et test d'intrusion.
+- Charge et restauration sur l'infrastructure cible ; provisionner le stockage WORM des archives.

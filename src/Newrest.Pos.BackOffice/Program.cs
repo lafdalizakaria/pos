@@ -11,6 +11,9 @@ using Newrest.Pos.Infrastructure.Persistence;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
+var productionWarnings = builder.Environment.IsProduction()
+    ? Newrest.Pos.Infrastructure.Hosting.ProductionReadiness.EnsureReady(builder.Configuration, Newrest.Pos.Infrastructure.Hosting.ServerHost.BackOffice)
+    : [];
 
 builder.Services.AddSerilog((services, lc) => lc
     .ReadFrom.Configuration(builder.Configuration)
@@ -28,7 +31,37 @@ builder.Services.AddBackOfficeAuthentication(builder.Configuration, builder.Envi
 builder.Services.AddHealthChecks().AddDbContextCheck<PosDbContext>("database", tags: ["ready"]);
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 
+builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>(o =>
+{
+    o.ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto;
+    o.KnownIPNetworks.Clear();
+    o.KnownProxies.Clear();
+    foreach (var network in builder.Configuration.GetSection("ForwardedHeaders:KnownNetworks").Get<string[]>() ?? [])
+    {
+        o.KnownIPNetworks.Add(System.Net.IPNetwork.Parse(network));
+    }
+});
+
 var app = builder.Build();
+foreach (var warning in productionWarnings)
+{
+    app.Logger.LogWarning("Production configuration: {Warning}", warning);
+}
+
+app.UseForwardedHeaders();
+app.Use(async (context, next) =>
+{
+    var headers = context.Response.Headers;
+    headers.XContentTypeOptions = "nosniff";
+    headers.XFrameOptions = "DENY";
+    headers["Referrer-Policy"] = "same-origin";
+    headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
+    // Blazor Server: scripts from this origin only, WebSocket to this origin, Entra ID for the sign-in form posts.
+    headers.ContentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
+                                    + "connect-src 'self' wss: ws:; frame-ancestors 'none'; base-uri 'self'; object-src 'none'; "
+                                    + "form-action 'self' https://login.microsoftonline.com";
+    await next(context);
+});
 
 // French UI by default; Arabic (RTL) is planned and must be added to the supported cultures.
 string[] cultures = ["fr-MA", "fr-FR"];

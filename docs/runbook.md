@@ -1,8 +1,7 @@
 # Runbook d'exploitation
 
-> Version phase 1 : environnement de développement et base de données. Les procédures de site (ouverture d'un site,
-> ajout d'une caisse, badge perdu, panne réseau, clôture forcée, restauration) seront complétées au fil des phases
-> 2 à 6.
+> Procédures d'exploitation de la solution. Démarrage d'un site : `pilot-checklist.md`. Sécurité : `security.md`.
+> Capacité mesurée : `load-test.md`.
 
 ## Prérequis développeur
 
@@ -188,3 +187,69 @@ ou repasser le site sur Gemini. En urgence sur un poste : `vision.json` → `{"p
 Page **Performance vision**, filtrer sur le moteur (ex. `yolo:20261003`) : la section *Calibration des seuils* donne la
 précision par tranche de confiance et les seuils suggérés (97 % de justes pour l'ajout automatique). Les reporter dans
 les réglages du site ; ils s'appliquent à la synchronisation suivante.
+
+
+## Mise en production du serveur (phase 6)
+
+1. Images : `docker build -f deploy/docker/Dockerfile --target api|backoffice|migrator` (aussi produites par la CI).
+2. Paramètres : `deploy/docker/production.env.example` (secrets depuis le coffre). En `Production`, l'API et le back-office
+   **refusent de démarrer** avec une configuration incomplète ou de développement et listent tous les problèmes.
+3. Chaque version : `docker compose ... run --rm migrator` (compte `pos_migrator`) **puis** redémarrage de l'API et du back-office.
+4. Une seule instance d'API avec `Supervision__JobsEnabled=true` (contrôle d'intégrité nocturne, alertes).
+5. Sondes : `/health/live` (processus) et `/health/ready` (base) ; métriques OpenTelemetry (`pos.tickets.ingested`,
+   `pos.ledger.movements`, `pos.sync.rejections`, `pos.alerts.active`, `pos.registers.silent`).
+6. Reverse proxy : TLS, `ForwardedHeaders__KnownNetworks__0=<réseau du proxy>`.
+
+## Installer / mettre à jour une caisse
+Paquet `newrest-pos-register-<version>.zip` (CI ou `deploy/register/build-package.sh`), voir `deploy/register/README.md`.
+Mise à jour : après la clôture, relancer `install-register.ps1` (données, clé et réglages conservés). Contrôle : colonne
+*Version* de la page **Supervision**.
+
+## Supervision et alertes
+Back-office → **Supervision** (actualisée chaque minute) ; les alertes importantes et critiques partent sur le webhook
+(`Supervision:WebhookUrl`), une fois puis toutes les 6 h tant qu'elles durent.
+
+| Alerte | Signification | Action |
+|---|---|---|
+| Caisse ouverte sans nouvelles (critique) | Session ouverte, aucun contact depuis 30 min | Appeler le site : poste éteint, réseau ? La caisse fonctionne hors ligne ; vérifier la file au retour |
+| File de synchronisation bloquée (critique) | Un élément est refusé par le serveur (ordre fiscal) | Lire l'erreur, corriger la cause (caisse désactivée, données), puis écran **Responsable** → *Relancer la file* |
+| Chaîne d'intégrité invalide (critique) | Un ticket a été modifié, supprimé ou inséré en base | **Incident de sécurité** : geler les accès SQL, conserver les journaux, comparer avec la dernière archive signée et les sauvegardes, informer la direction financière |
+| Éléments en attente | Plus de 50 éléments ou plus d'1 h de retard | Réseau du site ; si persistant, journal de la caisse |
+| Session non clôturée | Session ouverte depuis plus de 20 h | Faire faire le Z (ou *Clôture forcée* par un responsable) |
+| Sauvegarde locale absente | Aucune copie SQLite depuis 30 h | Espace disque / droits du dossier de données ; *Sauvegarder maintenant* |
+| Débit sans ticket | Compte débité, ticket jamais reçu (> 2 h) | Supervision → Rapprochement ; vérifier avec le site, puis la finance contre-passe le débit |
+| Découvert hors ligne (info) | Vente hors ligne au-delà du découvert | Régularisation avec le convive / l'employeur |
+| Reconnaissance | Service vision en erreur ou réglage non appliqué | Voir « Reconnaissance des plateaux » ci-dessus |
+| Chaîne non vérifiée récemment | Tâche nocturne absente | Vérifier l'instance `JobsEnabled` ; *Vérifier toutes les chaînes maintenant* |
+
+## Sauvegardes et restauration
+- **Serveur** : `deploy/sql/maintenance.sql` (complète hebdomadaire, différentielle quotidienne, journal toutes les 15 min,
+  `CHECKDB` hebdomadaire). Objectifs : perte ≤ 15 min, reprise ≤ 2 h. Stockage : photos, modèles et archives
+  (`Storage:RootPath`) sauvegardés avec la base.
+- **Restaurer la base** : arrêter API et back-office ; `RESTORE ... WITH NORECOVERY` (complète, différentielle) puis
+  `RESTORE LOG ... STOPAT` ; redémarrer ; Supervision → *Vérifier toutes les chaînes*. Les caisses renvoient d'elles-mêmes
+  les éléments que le serveur n'a plus (outbox idempotente) ; les tickets reçus après le point de restauration et absents
+  des caisses (caisse réinstallée entre-temps) sont signalés comme trous de séquence.
+- **Caisse** : copies SQLite dans `C:\ProgramData\Newrest\POS\backups` (quotidienne et après chaque Z, 7 gardées). Disque
+  abîmé : fermer la caisse, renommer `register.db`, copier la dernière sauvegarde en `register.db`, relancer ; les tickets
+  postérieurs à la copie déjà reçus par le serveur sont repris (réinstallation : séquence et empreinte du serveur). Ne
+  jamais supprimer la base d'une caisse dont la file n'est pas vide.
+
+## Archives fiscales mensuelles
+À partir du 3 du mois suivant : back-office → **Archives & conformité** → société + mois → *Archiver le mois* (refusé si
+une chaîne est rompue). Télécharger le zip, le copier sur le stockage immuable (WORM), *Vérifier*. Contrôle par un tiers :
+`Newrest.Pos.Migrator --verify-archive archive.zip --previous archive-precedente.zip [--key-id <id>]` (code 0 = intègre).
+Les mois s'archivent dans l'ordre ; les tickets arrivés après l'archivage figurent dans l'archive suivante.
+
+## Rotation des secrets
+| Secret | Procédure |
+|---|---|
+| Clé de signature des jetons caisses | Nouvelle valeur dans le coffre, redémarrage de l'API : les caisses obtiennent un nouveau jeton seules (≤ 15 min) |
+| Clé d'une caisse | Back-office → *Renouveler la clé* puis ressaisie sur la caisse (l'ancienne cesse immédiatement) |
+| Clé des archives (ECDSA) | Nouvelle clé dans le coffre ; conserver **toutes** les clés publiques (chaque archive contient la sienne et son identifiant) |
+| Secret Entra du back-office | Nouveau secret dans Entra puis le coffre, redémarrage du back-office |
+| Clé Gemini | `install-vision-service.ps1 -GeminiApiKey` sur chaque poste (Intune), puis révocation de l'ancienne |
+
+## Données personnelles
+Back-office → **Archives & conformité** → *Anonymisation* : convives inactifs, comptes clos à solde nul, sans mouvement
+depuis la date choisie (≥ 3 mois). Simuler, puis anonymiser (journalisé). Proposition : chaque trimestre, date = 12 mois.

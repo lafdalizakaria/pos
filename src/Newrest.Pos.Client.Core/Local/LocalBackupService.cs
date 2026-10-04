@@ -20,7 +20,7 @@ public sealed partial class LocalBackupService(LocalStore store, RegisterOptions
     {
         Directory.CreateDirectory(Folder);
         var now = clock.GetUtcNow();
-        var path = Path.Combine(Folder, $"register-{now.UtcDateTime:yyyyMMdd-HHmmss}.db");
+        var path = Path.Combine(Folder, $"register-{now.UtcDateTime:yyyyMMdd-HHmmss-fff}.db");
         await Task.Run(() =>
         {
             using var source = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = store.DatabasePath, Pooling = false }.ToString());

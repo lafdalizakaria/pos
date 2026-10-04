@@ -30,6 +30,7 @@ public sealed class ApiFactory(string connectionString, string storageRoot) : We
         // UseSetting (not ConfigureAppConfiguration): Program reads configuration while registering services.
         builder.UseSetting("ConnectionStrings:PosDb", connectionString);
         builder.UseSetting("Authentication:Users:DevSigningKey", UserKey);
+        builder.UseSetting("RateLimits:RegisterTokenPerMinute", "20");
         builder.UseSetting("Authentication:Users:Audience", "newrest-pos-api");
         builder.UseSetting("Authentication:Registers:SigningKey", RegisterKey);
         builder.UseSetting("Storage:RootPath", storageRoot);

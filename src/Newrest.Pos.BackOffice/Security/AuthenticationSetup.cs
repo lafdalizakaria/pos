@@ -56,7 +56,7 @@ public static class AuthenticationSetup
                 o.AccessDeniedPath = "/access-denied";
                 o.Cookie.Name = "newrest.pos.bo";
                 o.Cookie.HttpOnly = true;
-                o.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+                o.Cookie.SecurePolicy = environment.IsDevelopment() ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always;
                 o.Cookie.SameSite = SameSiteMode.Lax;
                 o.ExpireTimeSpan = TimeSpan.FromHours(8);
                 o.SlidingExpiration = true;

@@ -12,7 +12,9 @@
 | Correction uniquement par avoir | `Ticket.IssueCreditNote` (avoir lié, motif obligatoire, même séquence) | Phase 1 ✔ (avoir total) |
 | Intégrité / traçabilité | Chaîne SHA-256 : chaque ticket contient le hash du précédent de la même caisse ; vérification (altération, suppression, insertion, doublon) ; le serveur refuse tout ticket hors séquence ou dont l'empreinte ne correspond pas | Phase 3 ✔ (écran « Clôtures Z & intégrité ») ; altération SQL directe détectée lors de la recette |
 | Clôture journalière (Z) | Z numéroté par caisse, totaux par moyen de paiement, par taux de TVA, subventions, recharges, écart de caisse, hash du dernier ticket ; recalculé et contrôlé par le serveur | Phase 3 ✔ (caisse, impression, serveur) |
-| Journal des actions sensibles | `AuditLog` immuable | Modèle phase 1 ; alimentation phase 2 |
+| Journal des actions sensibles | `AuditLog` immuable | Phase 2 ✔ |
+| Contrôle continu de l'intégrité | Recalcul de toutes les chaînes chaque nuit, alerte critique en cas d'anomalie | Phase 6 ✔ (falsification SQL détectée en test) |
+| Archivage | Archives mensuelles signées (ECDSA P-256) : tickets recalculables, Z, mouvements, points de contrôle de chaîne ; vérification hors ligne (`Newrest.Pos.Migrator --verify-archive`) | Phase 6 ✔ |
 
 ## 1 bis. Mentions imprimées aujourd'hui sur le ticket
 
@@ -45,8 +47,10 @@ Les recharges impriment un « REÇU DE RECHARGE (n'est pas une facture) ».
 9. **Ticket papier vs électronique** : l'impression est-elle obligatoire pour chaque vente (y compris 100 % subventionnée) ?
 10. **Écarts de caisse** : traitement comptable et seuil de justification.
 
-## 3. Archivage (à détailler en phase 6)
+## 3. Archivage (phase 6)
 
-- Sauvegardes SQL Server complètes + journaux, rétention conforme au point 7.
-- Export périodique signé (tickets + chaîne + Z) vers un stockage WORM / immuable.
-- La vérification de la chaîne peut reprendre à un point de contrôle (`TicketChainVerifier.Verify(..., firstExpectedSequence, expectedPreviousHash)`).
+- Sauvegardes SQL Server : `deploy/sql/maintenance.sql` (35 jours).
+- **Archives mensuelles signées** par société (`Archives & conformité`) : chaque archive reprend la chaîne de chaque caisse
+  là où la précédente s'arrête ; copie sur un stockage immuable (WORM) pendant la durée légale (point 7) — à provisionner.
+- Vérification par un tiers sans accès à la base : `Newrest.Pos.Migrator --verify-archive <zip> --previous <zip précédent>`.
+- À valider : format accepté en cas de contrôle (JSON lignes + manifeste signé), conservation de la clé publique.

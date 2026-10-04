@@ -18,6 +18,9 @@ using Serilog;
 
 // The database is NOT migrated here: use Newrest.Pos.Migrator.
 var builder = WebApplication.CreateBuilder(args);
+var productionWarnings = builder.Environment.IsProduction()
+    ? Newrest.Pos.Infrastructure.Hosting.ProductionReadiness.EnsureReady(builder.Configuration, Newrest.Pos.Infrastructure.Hosting.ServerHost.Api)
+    : [];
 
 builder.Services.AddSerilog((services, lc) => lc
     .ReadFrom.Configuration(builder.Configuration)
@@ -35,7 +38,14 @@ builder.Services.AddRateLimiter(o =>
     o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     o.AddPolicy(AuthEndpoints.TokenRateLimit, context => RateLimitPartition.GetFixedWindowLimiter(
         context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-        _ => new FixedWindowRateLimiterOptions { PermitLimit = 20, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+        // Per IP: every register of a site usually shares one public address (NAT) and authenticates at the same time
+        // (opening, restart). Device keys are 256-bit random: the limit only curbs abuse, it is not the protection.
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = builder.Configuration.GetValue("RateLimits:RegisterTokenPerMinute", 300),
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        }));
 });
 var supervision = builder.Configuration.GetSection("Supervision").Get<SupervisionOptions>() ?? new SupervisionOptions();
 builder.Services.AddSingleton(supervision);
@@ -58,7 +68,39 @@ if (!string.IsNullOrWhiteSpace(builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOIN
     otel.UseOtlpExporter();
 }
 
+builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>(o =>
+{
+    // Behind the reverse proxy / load balancer (TLS terminated there): trust X-Forwarded-For/Proto from the known proxy network only.
+    o.ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto;
+    o.KnownIPNetworks.Clear();
+    o.KnownProxies.Clear();
+    foreach (var network in builder.Configuration.GetSection("ForwardedHeaders:KnownNetworks").Get<string[]>() ?? [])
+    {
+        o.KnownIPNetworks.Add(System.Net.IPNetwork.Parse(network));
+    }
+});
+
 var app = builder.Build();
+foreach (var warning in productionWarnings)
+{
+    app.Logger.LogWarning("Production configuration: {Warning}", warning);
+}
+
+app.UseForwardedHeaders();
+app.Use(async (context, next) =>
+{
+    var headers = context.Response.Headers;
+    headers.XContentTypeOptions = "nosniff";
+    headers.XFrameOptions = "DENY";
+    headers["Referrer-Policy"] = "no-referrer";
+    headers.ContentSecurityPolicy = "default-src 'none'; frame-ancestors 'none'";
+    headers.CacheControl = context.Request.Path.StartsWithSegments("/api") ? "no-store" : headers.CacheControl;
+    await next(context);
+});
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHsts();
+}
 
 app.UseSerilogRequestLogging();
 app.UseExceptionHandler();

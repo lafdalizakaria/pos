@@ -78,12 +78,13 @@ jobs:
       - name: End-to-end register scenarios (headless register + API + SQL Server + vision service, offline, recovery)
         run: >
           dotnet test tests/Newrest.Pos.Scenarios.Tests --no-build --configuration Release
-          --results-directory ./TestResults/scenarios --logger "trx;LogFileName=scenarios.trx"
+          --collect:"XPlat Code Coverage" --results-directory ./TestResults/scenarios --logger "trx;LogFileName=scenarios.trx"
 
       - name: Coverage gates (Domain and Application >= 80 % lines)
         run: |
           python3 deploy/ci/coverage_gate.py ./TestResults/unit 0.80 Newrest.Pos.Domain
-          python3 deploy/ci/coverage_gate.py ./TestResults/api 0.80 Newrest.Pos.Application
+          # Application: API tests + end-to-end scenarios (supervision, archives, deployment run through the real API)
+          python3 deploy/ci/coverage_gate.py ./TestResults 0.80 Newrest.Pos.Application
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -121,3 +122,63 @@ jobs:
         with:
           name: vision-test-results
           path: TestResults/vision/
+
+  security:
+    name: Dependency vulnerabilities
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: .NET packages (direct and transitive) with known vulnerabilities
+        run: |
+          dotnet restore Newrest.Pos.slnx
+          dotnet list Newrest.Pos.slnx package --vulnerable --include-transitive | tee vulnerable.txt
+          if grep -qE "^\s+>\s" vulnerable.txt; then echo "::error::Vulnerable NuGet packages"; exit 1; fi
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+
+      - name: Python packages of the vision service (OSV database)
+        working-directory: vision
+        run: |
+          uv export --locked --no-dev --no-hashes --format requirements-txt > requirements.txt
+          uvx --python 3.12 pip-audit --strict --disable-pip --no-deps -r requirements.txt
+
+  packages:
+    name: Server images and register package
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: dotnet
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Docker images (API, back-office, migrator)
+        run: |
+          for target in api backoffice migrator; do
+            docker build -f deploy/docker/Dockerfile --target "$target" -t "newrest-pos-$target:${{ github.sha }}" .
+          done
+
+      - name: Production configuration is enforced (the API refuses development settings)
+        run: |
+          if docker run --rm -e ConnectionStrings__PosDb="Server=x;User Id=sa;Password=y" "newrest-pos-api:${{ github.sha }}" 2> refusal.txt; then
+            echo "::error::The API started with an invalid production configuration"; exit 1
+          fi
+          grep -q "Configuration de production invalide" refusal.txt
+
+      - name: Register package (Windows x64, self-contained)
+        run: deploy/register/build-package.sh "1.0.${{ github.run_number }}" artifacts
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: register-package
+          path: artifacts/

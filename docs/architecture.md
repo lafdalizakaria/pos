@@ -187,6 +187,23 @@ Calculée en caisse, envoyée après tous les tickets de la session ; le serveur
 - **Calibration** : `ThresholdAdvisor` (Domain) compare les confiances aux validations des caissières et suggère les
   seuils (page *Performance vision*, filtrable par moteur/modèle).
 
+## Phase 6 — Production
+
+```
+ Caisse ── battement de cœur (1 min) ──► API ──► RegisterHeartbeats ─┐
+        ── sauvegardes SQLite locales                                 ├─► SupervisionRules ─► page Supervision
+ Tâche nocturne : recalcul de toutes les chaînes ──► IntegrityChecks ─┤                   └─► webhook (Teams/Slack)
+ Ledger : débits sans ticket, découverts hors ligne ──────────────────┘                   └─► métriques OpenTelemetry
+ Fin de mois : ArchiveService ─► zip signé ECDSA (tickets, Z, mouvements, points de contrôle) ─► stockage WORM
+                                 └─ vérification hors ligne : Newrest.Pos.Migrator --verify-archive
+```
+
+- **Déploiement** : images Docker (`deploy/docker`), migrateur en tâche avant chaque version, une instance « jobs » ;
+  caisses par paquet zip + PowerShell (`deploy/register`).
+- **Durcissement** : contrôle de configuration au démarrage en production, CSP stricte, HSTS, cookies sécurisés,
+  en-têtes `X-Forwarded-*` filtrés, audit des dépendances en CI. Voir `security.md`.
+- **Capacité** : `load-test.md` (outil `tools/Newrest.Pos.LoadTest`).
+
 ## Tests
 
 | Projet | Contenu |
@@ -199,5 +216,9 @@ Calculée en caisse, envoyée après tous les tickets de la session ; le serveur
 | `tests/Newrest.Pos.Scenarios.Tests` (déploiement) | Réglages du site → téléchargement, contrôle d'empreinte, installation, bascule, seuils appliqués, état remonté ; pas de re-téléchargement ; retour à Gemini et retour arrière ; « dernier publié » vs modèle fixé ; **modèle altéré refusé** ; site désactivé ; service injoignable ; secours local ; **back-office → caisse → vrai service Python avec un modèle ONNX → vente** |
 | `vision/tests` (pytest, phase 5) | Décodage YOLO (letterbox, masque du menu, suppression des doublons, alternatives), stockage des modèles (empreinte, forme, conflit, purge), `/models` et `/runtime`, secours local, hybride (fusion, nouvel article, Gemini lent/en panne), dataset d'entraînement, annotation ; `-m training` : **entraînement réel** + export ONNX + installation + reconnaissance |
 | `vision/tests` (pytest) | Contrat de réponse, rejet des codes hors menu, délai dépassé (504), erreurs provider, images invalides, garde-fou visages, dataset/feedback/labels YOLO, envoi central, schéma et requête Gemini (faux client), clé DPAPI, caméra (recadrage), bascule de provider à chaud, écoute locale uniquement |
+| `tests/Newrest.Pos.Scenarios.Tests` (phase 6) | Battement de cœur, sauvegarde locale, contrôle d'intégrité, **falsification SQL → alerte critique → webhook** (une seule fois), débit sans ticket → rapprochement → contre-passation, file bloquée, périmètres, écran Responsable (file, sauvegarde), clôture forcée, **archives signées** (création, vérification serveur et Migrator, falsifications détectées, continuité avec un ticket en retard), anonymisation |
+| `tests/Newrest.Pos.Domain.Tests` (phase 6) | Règles de supervision (silence, file, session, sauvegarde, intégrité, vision, rapprochement) |
+| `tests/Newrest.Pos.Infrastructure.IntegrationTests` (phase 6) | Contrôle de la configuration de production |
+| `tools/Newrest.Pos.LoadTest` | Charge : N caisses virtuelles contre une API réelle (résultats dans `load-test.md`) |
 | `tests/e2e/backoffice-smoke.mjs` | Parcours navigateur (Playwright) du back-office, hors CI |
 | `tests/Newrest.Pos.Infrastructure.IntegrationTests` | SQL Server (Testcontainers) : migrations + seed, 50 débits concurrents, idempotence (séquentielle et concurrente), conflit de clé, contre-passation unique, rejeu hors ligne, aller-retour ticket + hash, altération SQL détectée, immutabilité, unicité séquence/session, Z persisté |

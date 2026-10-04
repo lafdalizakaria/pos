@@ -1,0 +1,10 @@
+**/bin/
+**/obj/
+**/TestResults/
+**/.venv/
+**/node_modules/
+vision/
+tests/
+.git/
+*.db
+.env

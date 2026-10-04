@@ -50,6 +50,9 @@ await visit(admin, 'audit', 'Journal', null);
 await visit(admin, 'tickets', 'Tickets', null);
 await visit(admin, 'clotures', 'intégrité', null);
 await visit(admin, 'vision', 'Indicateurs', 'vision');
+await visit(admin, 'supervision', 'Caisses', 'supervision');
+await visit(admin, 'conformite', 'Archives mensuelles', 'conformite');
+await visit(admin, 'vision/modeles', 'Réglages par site', null);
 await visit(admin, 'droits', 'Attribuer', null);
 
 async function step(name, fn) { try { await fn(); } catch (e) { results.push(`FAIL ${name}: ${e.message.split('\n')[0]}`); await admin.screenshot({ path: `${shots}/fail-${name}.png`, fullPage: true }).catch(() => {}); } }
@@ -75,8 +78,9 @@ await admin.screenshot({ path: `${shots}/comptes.png`, fullPage: true });
 });
 await step('menu', async () => {
 
-// Create a menu for tomorrow's cell and add an article.
+// Create a menu next week (always free, whatever today's date) and add an article.
 await admin.goto(`${base}/menus`); await admin.waitForTimeout(1200);
+await admin.click('button:has-text("Semaine suivante")'); await admin.waitForTimeout(1200);
 const addButtons = await admin.$$('.day button.link');
 await addButtons[addButtons.length - 1].click(); await admin.waitForTimeout(1200);
 await admin.click('button:has-text("Ajouter")'); await admin.waitForTimeout(1200);

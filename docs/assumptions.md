@@ -120,3 +120,22 @@ contraire et doivent être confirmées par le métier (M), la finance / l'expert
 | A93 | Secours local | `vision.json` sur le poste l'emporte sur le back-office (ex. forcer Gemini pendant un incident) ; signalé « forcé localement » dans l'état des caisses | `SettingsProvider` | D |
 | A94 | Calibration | Une prédiction est « juste » si la caissière l'a gardée (ajout auto ou confirmé), « fausse » si corrigée ou supprimée. Seuil haut suggéré : le plus bas donnant **97 %** de justes au-dessus (30 prédictions minimum) ; seuil bas : la bande sous le seuil haut reste juste à **60 %**. Suggestion affichée, jamais appliquée automatiquement | `ThresholdAdvisor` | M |
 | A95 | Taille des modèles | 300 Mo maximum à l'import (back-office et API) | `VisionModelService` | D |
+
+## Phase 6 — Production
+
+| # | Sujet | Hypothèse retenue | Où | À valider |
+|---|---|---|---|---|
+| A96 | Alertes | Calculées à la demande à partir de l'état (pas de table d'alertes) : caisse ouverte muette 30 min, file bloquée, ≥ 50 éléments ou 1 h de retard, session > 20 h, sauvegarde locale > 30 h, chaîne invalide ou non vérifiée depuis 36 h, débit sans ticket > 2 h, découvert hors ligne (7 j), erreur vision. Seuils configurables (`Supervision:Thresholds`) | `SupervisionRules` | Exploitation |
+| A97 | Notification | Webhook unique (`{"text": …}`, compatible Teams/Slack), alertes importantes et critiques, renvoi toutes les 6 h tant qu'elles durent ; mémoire de l'instance (redémarrage = renvoi) | `SupervisionWorker` | Exploitation |
+| A98 | Contrôle d'intégrité | Toutes les chaînes recalculées chaque nuit (02:30 UTC), par lots de 2 000 tickets, historique 90 jours ; une seule instance exécute les tâches | `SupervisionService` | D |
+| A99 | Battement de cœur | Toutes les minutes : version, file (nombre, plus ancien, blocage), session ouverte, dernière sauvegarde locale | `SyncService` | D |
+| A100 | Débit sans ticket | Contre-passation par la finance autorisée **uniquement** pour une consommation dont le ticket n'est pas arrivé après 2 h (exception à A43) ; si le ticket arrive ensuite, il est accepté (le convive n'est alors pas débité : à régulariser) | `AccountService.ReverseAsync` | F |
+| A101 | Archives fiscales | Une archive par société et par mois, dans l'ordre, à partir du 3 du mois suivant ; par caisse, tous les tickets suivant l'archive précédente jusqu'à la fin du mois (couverture continue, sans recouvrement) ; contenu : tickets (forme de synchronisation, empreintes recalculables), originaux des avoirs, Z, mouvements de comptes ; manifeste signé ECDSA P-256 ; refus si une chaîne est rompue. Stockage WORM et durée (10 ans) à la charge de l'infrastructure | `ArchiveService`, `ArchiveFormat` | **F / DGI** |
+| A102 | Clé d'archives | ECDSA P-256 au coffre ; la clé publique et son identifiant sont dans chaque archive ; vérification hors ligne par le Migrator (option `--key-id` pour imposer la clé attendue) | `EcdsaArchiveSigner` | D |
+| A103 | Anonymisation | Convives inactifs, comptes inactifs à solde nul, sans mouvement depuis la date choisie (≥ 3 mois) : nom, matricule, catégorie, numéros de badge remplacés ; tickets inchangés (pièces fiscales) | `PrivacyService` | DPO |
+| A104 | Sauvegarde caisse | Copie SQLite cohérente (API de sauvegarde + `integrity_check`) chaque jour et après chaque Z, 7 copies | `LocalBackupService` | D |
+| A105 | Clôture forcée | Par un responsable connecté, quand le caissier est absent ; le Z est marqué « forcé » | `CloseSessionViewModel` | M |
+| A106 | Configuration de production | Démarrage refusé si : compte `sa`, SQL non chiffré, secret absent (clé caisses ≥ 32 caractères, clé d'archives, Entra), clé éphémère ou connexion de développement, PIN < 600 000 itérations | `ProductionReadiness` | D |
+| A107 | Limite des demandes de jeton | 300/min par adresse IP (les caisses d'un site partagent une adresse publique) | `RateLimits:RegisterTokenPerMinute` | D |
+| A108 | Déploiement | Serveur : images Docker non root (API, back-office, migrateur) ; caisse : paquet zip autonome (.NET inclus) + script PowerShell, distribuable par Intune/SCCM ; pas de MSIX (signature de code et outillage Windows requis — possible plus tard) | `deploy/` | DSI |
+| A109 | Capacité | Une API 2 vCPU absorbe ~10 000 plateaux/min sans erreur (banc pessimiste) pour une pointe estimée à 240/min ; 2 instances pour la disponibilité, pas pour la charge | `load-test.md` | DSI |
