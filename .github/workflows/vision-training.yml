@@ -1,0 +1,38 @@
+name: Vision training pipeline
+
+# Real (small) YOLO training on CPU: synthetic trays → dataset → training → ONNX export → installation in the
+# service → recognition. Heavy (PyTorch): run on demand and weekly, not on every push.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * 1"
+  pull_request:
+    paths:
+      - "vision/training/**"
+      - "vision/app/model_store.py"
+      - "vision/app/providers/yolo.py"
+
+permissions:
+  contents: read
+
+jobs:
+  training:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: vision
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install with the training extra (PyTorch, Ultralytics)
+        run: uv sync --locked --extra training
+
+      - name: Train, export, install and recognize
+        env:
+          YOLO_OFFLINE: "1"
+        run: uv run pytest -m training -q

@@ -1,0 +1,26 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Newrest.Pos.Api/Newrest.Pos.Api.csproj" />
+    <Project Path="src/Newrest.Pos.Application/Newrest.Pos.Application.csproj" />
+    <Project Path="src/Newrest.Pos.BackOffice/Newrest.Pos.BackOffice.csproj" />
+    <Project Path="src/Newrest.Pos.Client.Core/Newrest.Pos.Client.Core.csproj" />
+    <Project Path="src/Newrest.Pos.Client.Data/Newrest.Pos.Client.Data.csproj" />
+    <Project Path="src/Newrest.Pos.Client/Newrest.Pos.Client.csproj" />
+    <Project Path="src/Newrest.Pos.Contracts/Newrest.Pos.Contracts.csproj" />
+    <Project Path="src/Newrest.Pos.Devices/Newrest.Pos.Devices.csproj" />
+    <Project Path="src/Newrest.Pos.Domain/Newrest.Pos.Domain.csproj" />
+    <Project Path="src/Newrest.Pos.Infrastructure/Newrest.Pos.Infrastructure.csproj" />
+    <Project Path="src/Newrest.Pos.Migrator/Newrest.Pos.Migrator.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Newrest.Pos.Api.Tests/Newrest.Pos.Api.Tests.csproj" />
+    <Project Path="tests/Newrest.Pos.Devices.Tests/Newrest.Pos.Devices.Tests.csproj" />
+    <Project Path="tests/Newrest.Pos.Domain.Tests/Newrest.Pos.Domain.Tests.csproj" />
+    <Project Path="tests/Newrest.Pos.Infrastructure.IntegrationTests/Newrest.Pos.Infrastructure.IntegrationTests.csproj" />
+    <Project Path="tests/Newrest.Pos.Scenarios.Tests/Newrest.Pos.Scenarios.Tests.csproj" />
+    <Project Path="tests/Newrest.Pos.Testing/Newrest.Pos.Testing.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Newrest.Pos.LoadTest/Newrest.Pos.LoadTest.csproj" />
+  </Folder>
+</Solution>

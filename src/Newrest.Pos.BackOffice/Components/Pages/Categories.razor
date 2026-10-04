@@ -1,0 +1,70 @@
+@page "/categories"
+@inherits PageBase
+
+<PageTitle>Catégories - Newrest POS</PageTitle>
+<h1>Catégories</h1>
+<Notice Error="@Error" Success="@Success" />
+
+<section class="card">
+    <table>
+        <thead><tr><th>Ordre</th><th>Code</th><th>Libellé</th><th>Couleur</th><th>Statut</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var c in _categories)
+            {
+                <tr>
+                    <td>@c.DisplayOrder</td><td>@c.Code</td><td>@c.Name</td>
+                    <td>@if (c.ColorHex is { } color) { <span class="swatch" style="background:@color"></span> @color }</td>
+                    <td>@Messages.Status(c.IsActive)</td>
+                    <td class="actions">@if (IsAdmin) { <button class="link" @onclick="() => Edit(c)">Modifier</button> }</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    @if (IsAdmin)
+    {
+        <h2>@(_id is null ? "Nouvelle catégorie" : "Modifier la catégorie")</h2>
+        <div class="form">
+            <label>Code<input @bind="_form.Code" disabled="@(_id is not null)" /></label>
+            <label>Libellé<input @bind="_form.Name" /></label>
+            <label>Ordre d'affichage<input type="number" @bind="_form.DisplayOrder" /></label>
+            <label>Couleur (#RRGGBB)<input @bind="_form.ColorHex" maxlength="9" /></label>
+            <label class="check"><input type="checkbox" @bind="_form.IsActive" /> Active</label>
+        </div>
+        <button class="primary" disabled="@Busy" @onclick="SaveAsync">Enregistrer</button>
+        <button class="link" @onclick="() => (_id, _form) = (null, new Form())">Annuler</button>
+    }
+</section>
+
+@code {
+    private IReadOnlyList<CategoryDto> _categories = [];
+    private Guid? _id;
+    private Form _form = new();
+
+    protected override async Task LoadAsync() =>
+        _categories = await Run<CatalogService, IReadOnlyList<CategoryDto>>(s => s.ListCategoriesAsync()) ?? [];
+
+    private void Edit(CategoryDto c) => (_id, _form) = (c.Id, new Form
+    {
+        Code = c.Code, Name = c.Name, DisplayOrder = c.DisplayOrder, ColorHex = c.ColorHex, IsActive = c.IsActive,
+    });
+
+    private async Task SaveAsync()
+    {
+        var request = new CategoryUpsert(_form.Code, _form.Name, _form.DisplayOrder, _form.ColorHex, _form.IsActive);
+        var id = _id;
+        if (await Run<CatalogService>(s => id is { } e ? s.UpdateCategoryAsync(e, request) : s.CreateCategoryAsync(request), "Catégorie enregistrée."))
+        {
+            (_id, _form) = (null, new Form());
+            await LoadAsync();
+        }
+    }
+
+    private sealed class Form
+    {
+        public string Code { get; set; } = "";
+        public string Name { get; set; } = "";
+        public int DisplayOrder { get; set; }
+        public string? ColorHex { get; set; }
+        public bool IsActive { get; set; } = true;
+    }
+}

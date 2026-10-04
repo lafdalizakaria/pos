@@ -1,0 +1,234 @@
+@page "/comptes"
+@inherits PageBase
+
+<PageTitle>Comptes - Newrest POS</PageTitle>
+<h1>Comptes convives</h1>
+<Notice Error="@Error" Success="@Success" />
+
+<div class="toolbar">
+    <label>Client
+        <select @bind="ClientId" @bind:after="() => GoToAsync(1)">
+            @foreach (var c in _clients) { <option value="@c.Id">@c.Name</option> }
+        </select>
+    </label>
+    <input placeholder="Matricule ou nom" @bind="_search" @bind:event="oninput" @bind:after="() => GoToAsync(1)" />
+</div>
+
+<div class="grid-2">
+    <section class="card">
+        <table>
+            <thead><tr><th>Matricule</th><th>Convive</th><th>Type</th><th class="num">Solde</th><th class="num">Disponible</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var a in _page.Items)
+                {
+                    <tr class="@(a.Id == _account?.Id ? "selected" : null) @(a.IsActive ? null : "inactive")">
+                        <td>@a.EmployeeNumber</td><td>@a.DinerName</td><td>@TypeLabel(a.Type)</td>
+                        <td class="num @(a.Balance < 0 ? "negative" : null)">@Messages.Mad(a.Balance)</td><td class="num">@Messages.Mad(a.AvailableToSpend)</td>
+                        <td class="actions"><button class="link" @onclick="() => OpenAsync(a.Id)">Ouvrir</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <Pager Page="_pageNumber" PageSize="PageSize" Total="_page.TotalCount" OnChange="GoToAsync" />
+    </section>
+
+    <section class="card">
+        @if (_account is not null)
+        {
+            <h2>@_account.DinerName <small>(@_account.EmployeeNumber)</small></h2>
+            <p class="balance">Solde <strong class="@(_account.Balance < 0 ? "negative" : null)">@Messages.Mad(_account.Balance)</strong>
+                — disponible @Messages.Mad(_account.AvailableToSpend)</p>
+            @if (CanWrite)
+            {
+                <div class="form">
+                    <label>Type
+                        <select @bind="_settings.Type"><option value="Prepaid">Prépayé</option><option value="Postpaid">Postpayé</option><option value="Mixed">Mixte</option></select>
+                    </label>
+                    <label>Découvert autorisé<input type="number" step="0.01" min="0" @bind="_settings.OverdraftLimit" /></label>
+                    <label class="check"><input type="checkbox" @bind="_settings.IsActive" /> Actif</label>
+                </div>
+                <button class="secondary" disabled="@Busy" @onclick="SaveSettingsAsync">Enregistrer les paramètres</button>
+            }
+
+            @if (CanHandleMoney)
+            {
+                <h3>Opération</h3>
+                <div class="form">
+                    <label>Type
+                        <select @bind="_op.Kind">
+                            <option value="TopUp">Recharge</option>
+                            @if (IsFinance)
+                            {
+                                <option value="Correction">Correction (+/-)</option>
+                                <option value="Refund">Remboursement au convive</option>
+                            }
+                        </select>
+                    </label>
+                    <label>Montant (MAD)<input type="number" step="0.01" @bind="_op.Amount" /></label>
+                    @if (_op.Kind != "Correction")
+                    {
+                        <label>Moyen de paiement
+                            <select @bind="_op.PaymentMethod"><option value="Cash">Espèces</option><option value="Card">Carte</option><option value="BankTransfer">Virement</option></select>
+                        </label>
+                    }
+                    <label class="wide">@(_op.Kind == "TopUp" ? "Commentaire" : "Motif (obligatoire)")<input @bind="_op.Comment" /></label>
+                </div>
+                <button class="primary" disabled="@Busy" @onclick="ExecuteAsync">Valider</button>
+            }
+
+            <h3>Mouvements</h3>
+            <table>
+                <thead><tr><th>Date</th><th>Type</th><th class="num">Montant</th><th class="num">Solde après</th><th>Détail</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var m in _movements.Items)
+                    {
+                        <tr class="@(m.IsReversed ? "inactive" : null)">
+                            <td>@Messages.DateTime(m.OccurredAt)</td>
+                            <td>@MovementLabel(m.Type)@(m.ReversesMovementId is not null ? " (annulation)" : "")</td>
+                            <td class="num @(m.Amount < 0 ? "negative" : null)">@Messages.Mad(m.Amount)</td>
+                            <td class="num">@Messages.Mad(m.BalanceAfter)</td>
+                            <td>@m.Comment @(m.PerformedBy is { } by ? $"— {by}" : "") @(m.ExceededOverdraft ? "⚠ dépassement hors ligne" : "")</td>
+                            <td class="actions">
+                                @if (IsFinance && !m.IsReversed && m.ReversesMovementId is null && m.Type != "Consumption")
+                                {
+                                    <button class="link danger" @onclick="() => ReverseAsync(m)">Annuler</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <Pager Page="_movementPage" PageSize="PageSize" Total="_movements.TotalCount" OnChange="LoadMovementsAsync" />
+        }
+        else
+        {
+            <p>Sélectionnez un compte.</p>
+        }
+    </section>
+</div>
+
+@code {
+    private const int PageSize = 20;
+    private IReadOnlyList<ClientCompanyDto> _clients = [];
+    private PagedResult<AccountDto> _page = new([], 0, 1, PageSize);
+    private PagedResult<MovementDto> _movements = new([], 0, 1, PageSize);
+    private int _pageNumber = 1;
+    private int _movementPage = 1;
+    private string? _search;
+    private AccountDto? _account;
+    private SettingsForm _settings = new();
+    private OperationForm _op = new();
+
+    [SupplyParameterFromQuery(Name = "id")]
+    private Guid? AccountId { get; set; }
+
+    private Guid ClientId { get; set; }
+
+    protected override async Task LoadAsync()
+    {
+        _clients = await Run<ClientService, IReadOnlyList<ClientCompanyDto>>(s => s.ListClientsAsync()) ?? [];
+        if (AccountId is { } id && await Run<AccountService, AccountDto>(s => s.GetAsync(id)) is { } account)
+        {
+            ClientId = account.ClientCompanyId;
+            await GoToAsync(1);
+            await OpenAsync(id);
+        }
+        else if (_clients.Count > 0)
+        {
+            ClientId = _clients[0].Id;
+            await GoToAsync(1);
+        }
+    }
+
+    private async Task GoToAsync(int page)
+    {
+        _pageNumber = page;
+        var client = ClientId;
+        _page = await Run<AccountService, PagedResult<AccountDto>>(s => s.ListAsync(client, _search, page, PageSize)) ?? _page;
+    }
+
+    private static string TypeLabel(string type) => type switch { "Prepaid" => "Prépayé", "Postpaid" => "Postpayé", _ => "Mixte" };
+
+    private static string MovementLabel(string type) => type switch
+    {
+        "TopUp" => "Recharge", "Consumption" => "Consommation", "Subsidy" => "Dotation", "Refund" => "Remboursement",
+        "Correction" => "Correction", _ => "Transfert",
+    };
+
+    private async Task OpenAsync(Guid id)
+    {
+        _account = await Run<AccountService, AccountDto>(s => s.GetAsync(id));
+        if (_account is not null)
+        {
+            _settings = new SettingsForm { Type = _account.Type, OverdraftLimit = _account.OverdraftLimit, IsActive = _account.IsActive };
+            _op = new OperationForm();
+            await LoadMovementsAsync(1);
+        }
+    }
+
+    private async Task LoadMovementsAsync(int page)
+    {
+        _movementPage = page;
+        var id = _account!.Id;
+        _movements = await Run<AccountService, PagedResult<MovementDto>>(s => s.ListMovementsAsync(id, null, null, page, PageSize)) ?? _movements;
+    }
+
+    private async Task SaveSettingsAsync()
+    {
+        var id = _account!.Id;
+        if (await Run<AccountService, AccountDto>(s => s.UpdateAsync(id, new AccountUpdate(_settings.Type, _settings.OverdraftLimit, _settings.IsActive)),
+                "Paramètres enregistrés.") is not null)
+        {
+            await OpenAsync(id);
+            await GoToAsync(_pageNumber);
+        }
+    }
+
+    private async Task ExecuteAsync()
+    {
+        var id = _account!.Id;
+        var op = _op;
+        var result = op.Kind switch
+        {
+            "Correction" => await Run<AccountService, LedgerResultDto>(s => s.CorrectAsync(id, new CorrectionRequest(op.Amount, op.Comment ?? "", op.Key))),
+            "Refund" => await Run<AccountService, LedgerResultDto>(s => s.RefundAsync(id, new RefundRequest(op.Amount, op.PaymentMethod, op.Comment ?? "", op.Key))),
+            _ => await Run<AccountService, LedgerResultDto>(s => s.TopUpAsync(id, new TopUpRequest(op.Amount, op.PaymentMethod, op.Key, op.Comment))),
+        };
+        if (result is not null)
+        {
+            Success = result.WasDuplicate
+                ? "Opération déjà enregistrée (double clic ignoré)."
+                : $"Opération enregistrée. Nouveau solde : {Messages.Mad(result.BalanceAfter)}.";
+            await OpenAsync(id);
+            await GoToAsync(_pageNumber);
+        }
+    }
+
+    private async Task ReverseAsync(MovementDto movement)
+    {
+        var id = _account!.Id;
+        if (await Run<AccountService, LedgerResultDto>(s => s.ReverseAsync(id, movement.Id, new ReversalRequest("Annulation depuis le back-office", Guid.NewGuid())),
+                "Mouvement annulé.") is not null)
+        {
+            await OpenAsync(id);
+            await GoToAsync(_pageNumber);
+        }
+    }
+
+    private sealed class SettingsForm
+    {
+        public string Type { get; set; } = "Prepaid";
+        public decimal OverdraftLimit { get; set; }
+        public bool IsActive { get; set; }
+    }
+
+    private sealed class OperationForm
+    {
+        /// <summary>One key per form: a double click replays the same operation instead of creating two.</summary>
+        public Guid Key { get; } = Guid.NewGuid();
+        public string Kind { get; set; } = "TopUp";
+        public decimal Amount { get; set; }
+        public string PaymentMethod { get; set; } = "Cash";
+        public string? Comment { get; set; }
+    }
+}

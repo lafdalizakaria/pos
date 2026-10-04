@@ -1,0 +1,141 @@
+@page "/supervision"
+@inherits PageBase
+@inject TimeProvider Clock
+@implements IDisposable
+
+<PageTitle>Supervision - Newrest POS</PageTitle>
+<h1>Supervision</h1>
+<Notice Error="@Error" Success="@Success" />
+
+@if (_dashboard is { } d)
+{
+    <section class="card">
+        <h2>Alertes (@d.Alerts.Count)</h2>
+        <p class="hint">Mises à jour toutes les minutes. Les alertes critiques et importantes sont aussi envoyées sur le canal d'exploitation (webhook).</p>
+        @if (d.Alerts.Count == 0) { <p class="ok">✔ Aucune alerte.</p> }
+        else
+        {
+            <table>
+                <thead><tr><th>Niveau</th><th>Objet</th><th>Alerte</th><th>Depuis</th></tr></thead>
+                <tbody>
+                    @foreach (var a in d.Alerts)
+                    {
+                        <tr>
+                            <td class="@(a.Severity == "Critical" ? "negative" : null)"><strong>@SeverityLabel(a.Severity)</strong></td>
+                            <td>@a.Subject</td>
+                            <td>@a.Message</td>
+                            <td>@Messages.DateTime(a.Since)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+
+    <section class="card">
+        <h2>Caisses</h2>
+        @if (IsFinance) { <button disabled="@Busy" @onclick="VerifyAllAsync">Vérifier toutes les chaînes d'intégrité maintenant</button> }
+        <table>
+            <thead><tr><th>Caisse</th><th>Site</th><th>Dernier contact</th><th>Version</th><th class="num">En attente</th><th>Session ouverte</th>
+                <th>Sauvegarde locale</th><th>Intégrité</th><th>Vision</th></tr></thead>
+            <tbody>
+                @foreach (var r in d.Registers)
+                {
+                    <tr>
+                        <td><code>@r.Prefix</code> @r.Name</td>
+                        <td>@r.SiteName</td>
+                        <td>@(r.LastSeenAt is { } seen ? Messages.DateTime(seen) : "jamais")</td>
+                        <td>@(r.AppVersion ?? "—")</td>
+                        <td class="num @(r.BlockingError is not null ? "negative" : null)" title="@r.BlockingError">@(r.PendingCount?.ToString() ?? "—")@(r.BlockingError is not null ? " ⛔" : "")</td>
+                        <td>@(r.OpenSessionSince is { } open ? Messages.DateTime(open) : "—")</td>
+                        <td>@(r.LastBackupAt is { } b ? Messages.DateTime(b) : "—")</td>
+                        <td class="@(r.IntegrityValid == false ? "negative" : r.IntegrityValid == true ? "ok" : null)">
+                            @(r.IntegrityValid is null ? "—" : r.IntegrityValid.Value ? $"✔ {r.TicketsChecked} tickets" : "✘ anomalie")
+                            @if (r.IntegrityCheckedAt is { } at) { <span class="muted"> @Messages.DateTime(at)</span> }
+                        </td>
+                        <td>@(r.VisionProvider is null ? "—" : $"{r.VisionProvider} {r.VisionModelVersion}")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
+}
+
+<section class="card">
+    <h2>Rapprochement</h2>
+    <p class="hint">Débits de compte sans ticket (réponse perdue puis vente refusée hors ligne : à corriger par la finance, contre-passation),
+        ventes hors ligne au-delà du découvert, tickets reçus plus de 24 h après leur émission (caisse restée hors ligne).</p>
+    <div class="toolbar">
+        <label>Du <input type="date" @bind="_from" /></label>
+        <label>Au <input type="date" @bind="_to" /></label>
+        <button disabled="@Busy" @onclick="LoadReconciliationAsync">Afficher</button>
+    </div>
+    @if (_reconciliation is { } rec)
+    {
+        <h3>Débits sans ticket (@rec.DebitsWithoutTicket.Count)</h3>
+        <table>
+            <thead><tr><th>Date</th><th>Caisse</th><th>Convive</th><th class="num">Montant</th><th>Ticket attendu</th></tr></thead>
+            <tbody>@foreach (var m in rec.DebitsWithoutTicket)
+            {
+                <tr><td>@Messages.DateTime(m.OccurredAt)</td><td><code>@m.RegisterPrefix</code></td><td><a href="comptes">@m.DinerName</a></td>
+                    <td class="num">@Messages.Mad(m.Amount)</td><td><code>@m.TicketId</code></td></tr>
+            }</tbody>
+        </table>
+        <h3>Ventes hors ligne au-delà du découvert (@rec.OfflineOverdrafts.Count)</h3>
+        <table>
+            <thead><tr><th>Date</th><th>Caisse</th><th>Convive</th><th class="num">Montant</th><th class="num">Solde après</th></tr></thead>
+            <tbody>@foreach (var m in rec.OfflineOverdrafts)
+            {
+                <tr><td>@Messages.DateTime(m.OccurredAt)</td><td><code>@m.RegisterPrefix</code></td><td>@m.DinerName</td>
+                    <td class="num">@Messages.Mad(m.Amount)</td><td class="num negative">@Messages.Mad(m.BalanceAfter)</td></tr>
+            }</tbody>
+        </table>
+        <h3>Tickets reçus en retard (@rec.LateTickets.Count)</h3>
+        <table>
+            <thead><tr><th>Ticket</th><th>Émis</th><th>Reçu</th></tr></thead>
+            <tbody>@foreach (var t in rec.LateTickets)
+            {
+                <tr><td><code>@t.Number</code></td><td>@Messages.DateTime(t.IssuedAt)</td><td>@Messages.DateTime(t.ReceivedAt)</td></tr>
+            }</tbody>
+        </table>
+    }
+</section>
+
+@code {
+    private SupervisionDashboardDto? _dashboard;
+    private ReconciliationDto? _reconciliation;
+    private DateOnly _from;
+    private DateOnly _to;
+    private Timer? _timer;
+
+    protected override async Task LoadAsync()
+    {
+        _to = DateOnly.FromDateTime(Clock.GetUtcNow().UtcDateTime);
+        _from = _to.AddDays(-30);
+        await RefreshAsync();
+        _timer = new Timer(_ => InvokeAsync(async () => { await RefreshAsync(); StateHasChanged(); }), null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
+    }
+
+    private async Task RefreshAsync() => _dashboard = await Run<SupervisionService, SupervisionDashboardDto>(s => s.GetDashboardAsync()) ?? _dashboard;
+
+    private async Task VerifyAllAsync()
+    {
+        if (await Run<SupervisionService, IntegrityRunDto>(s => s.RunIntegrityChecksAsync()) is { } run)
+        {
+            Success = run.Invalid == 0 ? $"{run.RegistersChecked} caisse(s) vérifiée(s) : chaînes intègres." : $"{run.Invalid} chaîne(s) en anomalie !";
+            await RefreshAsync();
+        }
+    }
+
+    private async Task LoadReconciliationAsync() =>
+        _reconciliation = await Run<SupervisionService, ReconciliationDto>(s => s.GetReconciliationAsync(_from, _to));
+
+    private static string SeverityLabel(string severity) => severity switch
+    {
+        "Critical" => "Critique",
+        "Warning" => "Important",
+        _ => "Info",
+    };
+
+    public void Dispose() => _timer?.Dispose();
+}

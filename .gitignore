@@ -1,0 +1,33 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+.idea/
+TestResults/
+coverage*/
+*.db
+*.db-shm
+*.db-wal
+appsettings.Local.json
+appsettings.*.local.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+vision/data/
+vision/runs/
+*.onnx
+*.pt
+
+# Secrets
+.env
+*.pfx
+*.key
+
+# Local file storage (reference photos, datasets)
+**/data/storage/

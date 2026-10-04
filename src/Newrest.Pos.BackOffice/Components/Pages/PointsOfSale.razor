@@ -1,0 +1,215 @@
+@page "/points-de-vente"
+@inherits PageBase
+
+<PageTitle>Points de vente & caisses - Newrest POS</PageTitle>
+<h1>Points de vente &amp; caisses</h1>
+<Notice Error="@Error" Success="@Success" />
+
+@if (_issuedKey is not null)
+{
+    <div class="notice key" role="alert">
+        <strong>Clé de la caisse @_issuedKey.RegisterId</strong> — copiez-la maintenant dans l'installation de la caisse, elle ne sera plus jamais affichée :
+        <code>@_issuedKey.DeviceKey</code>
+        <button class="link" @onclick="() => _issuedKey = null">J'ai copié la clé</button>
+    </div>
+}
+
+<div class="toolbar">
+    <label>Site
+        <select @bind="SiteId" @bind:after="LoadPointsOfSaleAsync">
+            @foreach (var s in _sites) { <option value="@s.Id">@s.Name</option> }
+        </select>
+    </label>
+</div>
+
+<div class="grid-2">
+    <section class="card">
+        <h2>Points de vente</h2>
+        <table>
+            <thead><tr><th>Code</th><th>Nom</th><th>Type</th><th>Statut</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var p in _pointsOfSale)
+                {
+                    <tr class="@(p.Id == _selected?.Id ? "selected" : null)">
+                        <td>@p.Code</td><td>@p.Name</td><td>@TypeLabel(p.Type)</td><td>@Messages.Status(p.IsActive)</td>
+                        <td class="actions">
+                            <button class="link" @onclick="() => SelectAsync(p)">Caisses</button>
+                            @if (CanWrite) { <button class="link" @onclick="() => EditPos(p)">Modifier</button> }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (CanWrite)
+        {
+            <h3>@(_posId is null ? "Nouveau point de vente" : "Modifier le point de vente")</h3>
+            <div class="form">
+                <label>Code<input @bind="_pos.Code" disabled="@(_posId is not null)" /></label>
+                <label>Nom<input @bind="_pos.Name" /></label>
+                <label>Type
+                    <select @bind="_pos.Type">
+                        <option value="Self">Self</option><option value="Cafeteria">Cafétéria</option>
+                        <option value="Snack">Snack</option><option value="Kiosk">Kiosque</option>
+                    </select>
+                </label>
+                <label class="check"><input type="checkbox" @bind="_pos.IsActive" /> Actif</label>
+            </div>
+            <button class="primary" disabled="@Busy" @onclick="SavePosAsync">Enregistrer</button>
+            <button class="link" @onclick="NewPos">Annuler</button>
+        }
+    </section>
+
+    <section class="card">
+        <h2>Caisses @(_selected is null ? "" : $"— {_selected.Name}")</h2>
+        @if (_selected is not null)
+        {
+            <table>
+                <thead><tr><th>Préfixe</th><th>Nom</th><th>Clé</th><th>Dernier contact</th><th>Statut</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var r in _registers)
+                    {
+                        <tr>
+                            <td><code>@r.TicketPrefix</code></td><td>@r.Name</td>
+                            <td>@(r.HasDeviceKey ? $"émise le {Messages.DateTime(r.DeviceKeyIssuedAt!.Value)}" : "aucune")</td>
+                            <td>@(r.LastSeenAt is { } seen ? Messages.DateTime(seen) : "jamais")</td>
+                            <td>@Messages.Status(r.IsActive)</td>
+                            <td class="actions">
+                                @if (CanWrite)
+                                {
+                                    <button class="link" @onclick="() => EditRegister(r)">Modifier</button>
+                                    <button class="link" @onclick="() => IssueKeyAsync(r)">@(r.HasDeviceKey ? "Renouveler la clé" : "Émettre une clé")</button>
+                                    @if (r.HasDeviceKey) { <button class="link danger" @onclick="() => RevokeKeyAsync(r)">Révoquer</button> }
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            @if (CanWrite)
+            {
+                <h3>@(_registerId is null ? "Nouvelle caisse" : "Modifier la caisse")</h3>
+                <div class="form">
+                    <label>Code<input @bind="_register.Code" disabled="@(_registerId is not null)" /></label>
+                    <label>Nom<input @bind="_register.Name" /></label>
+                    <label>Préfixe des tickets<input @bind="_register.TicketPrefix" disabled="@(_registerId is not null)" maxlength="12" /></label>
+                    <label class="check"><input type="checkbox" @bind="_register.IsActive" /> Active</label>
+                </div>
+                <p class="hint">Le préfixe fait partie de la numérotation fiscale : il est unique et ne peut plus être modifié.</p>
+                <button class="primary" disabled="@Busy" @onclick="SaveRegisterAsync">Enregistrer</button>
+                <button class="link" @onclick="NewRegister">Annuler</button>
+            }
+        }
+    </section>
+</div>
+
+@code {
+    private IReadOnlyList<SiteDto> _sites = [];
+    private IReadOnlyList<PointOfSaleDto> _pointsOfSale = [];
+    private IReadOnlyList<RegisterDto> _registers = [];
+    private PointOfSaleDto? _selected;
+    private Guid? _posId;
+    private Guid? _registerId;
+    private PosForm _pos = new();
+    private RegisterForm _register = new();
+    private DeviceKeyIssued? _issuedKey;
+
+    private Guid SiteId { get; set; }
+
+    protected override async Task LoadAsync()
+    {
+        _sites = await Run<OrganizationService, IReadOnlyList<SiteDto>>(s => s.ListSitesAsync()) ?? [];
+        if (_sites.Count > 0)
+        {
+            SiteId = _sites[0].Id;
+            await LoadPointsOfSaleAsync();
+        }
+    }
+
+    private async Task LoadPointsOfSaleAsync()
+    {
+        _selected = null;
+        NewPos();
+        _pointsOfSale = await Run<OrganizationService, IReadOnlyList<PointOfSaleDto>>(s => s.ListPointsOfSaleAsync(SiteId)) ?? [];
+    }
+
+    private async Task SelectAsync(PointOfSaleDto pos)
+    {
+        _selected = pos;
+        NewRegister();
+        _registers = await Run<OrganizationService, IReadOnlyList<RegisterDto>>(s => s.ListRegistersAsync(pos.Id)) ?? [];
+    }
+
+    private static string TypeLabel(string type) => type switch { "Cafeteria" => "Cafétéria", "Kiosk" => "Kiosque", _ => type };
+
+    private void NewPos() => (_posId, _pos) = (null, new PosForm());
+
+    private void EditPos(PointOfSaleDto p) => (_posId, _pos) = (p.Id, new PosForm { Code = p.Code, Name = p.Name, Type = p.Type, IsActive = p.IsActive });
+
+    private async Task SavePosAsync()
+    {
+        var request = new PointOfSaleUpsert(SiteId, _pos.Code, _pos.Name, _pos.Type, _pos.IsActive);
+        var id = _posId;
+        if (await Run<OrganizationService>(s => id is { } e ? s.UpdatePointOfSaleAsync(e, request) : s.CreatePointOfSaleAsync(request),
+                "Point de vente enregistré."))
+        {
+            await LoadPointsOfSaleAsync();
+        }
+    }
+
+    private void NewRegister() => (_registerId, _register) = (null, new RegisterForm());
+
+    private void EditRegister(RegisterDto r) => (_registerId, _register) = (r.Id, new RegisterForm
+    {
+        Code = r.Code, Name = r.Name, TicketPrefix = r.TicketPrefix, IsActive = r.IsActive,
+    });
+
+    private async Task SaveRegisterAsync()
+    {
+        if (_selected is null)
+        {
+            return;
+        }
+
+        var request = new RegisterUpsert(_selected.Id, _register.Code, _register.Name, _register.TicketPrefix, _register.IsActive);
+        var id = _registerId;
+        if (await Run<OrganizationService>(s => id is { } e ? s.UpdateRegisterAsync(e, request) : s.CreateRegisterAsync(request),
+                "Caisse enregistrée."))
+        {
+            await SelectAsync(_selected);
+        }
+    }
+
+    private async Task IssueKeyAsync(RegisterDto register)
+    {
+        _issuedKey = await Run<OrganizationService, DeviceKeyIssued>(s => s.IssueDeviceKeyAsync(register.Id));
+        if (_selected is not null)
+        {
+            await SelectAsync(_selected);
+        }
+    }
+
+    private async Task RevokeKeyAsync(RegisterDto register)
+    {
+        if (await Run<OrganizationService>(s => s.RevokeDeviceKeyAsync(register.Id), "Clé révoquée : la caisse ne peut plus se connecter.")
+            && _selected is not null)
+        {
+            await SelectAsync(_selected);
+        }
+    }
+
+    private sealed class PosForm
+    {
+        public string Code { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string Type { get; set; } = "Self";
+        public bool IsActive { get; set; } = true;
+    }
+
+    private sealed class RegisterForm
+    {
+        public string Code { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string TicketPrefix { get; set; } = "";
+        public bool IsActive { get; set; } = true;
+    }
+}

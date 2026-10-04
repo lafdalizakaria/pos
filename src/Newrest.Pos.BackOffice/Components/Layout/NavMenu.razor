@@ -1,0 +1,30 @@
+<nav class="nav">
+    <NavLink href="" Match="NavLinkMatch.All">Accueil</NavLink>
+    <div class="nav-section">Organisation</div>
+    <NavLink href="organisation">Sociétés &amp; sites</NavLink>
+    <NavLink href="points-de-vente">Points de vente &amp; caisses</NavLink>
+    <NavLink href="operateurs">Opérateurs</NavLink>
+    <div class="nav-section">Catalogue</div>
+    <NavLink href="articles">Articles</NavLink>
+    <NavLink href="categories">Catégories</NavLink>
+    <NavLink href="tarifs">Tarifs</NavLink>
+    <NavLink href="menus">Menus du jour</NavLink>
+    <NavLink href="supervision">Supervision</NavLink>
+    <NavLink href="conformite">Archives &amp; conformité</NavLink>
+    <div class="nav-section">Ventes</div>
+    <NavLink href="tickets">Tickets &amp; avoirs</NavLink>
+    <NavLink href="clotures">Clôtures Z &amp; intégrité</NavLink>
+    <NavLink href="vision" Match="NavLinkMatch.All">Performance vision</NavLink>
+    <NavLink href="vision/modeles">Modèles vision</NavLink>
+    <div class="nav-section">Clients</div>
+    <NavLink href="clients">Clients &amp; contrats</NavLink>
+    <NavLink href="convives">Convives &amp; badges</NavLink>
+    <NavLink href="comptes">Comptes</NavLink>
+    <AuthorizeView Roles="Pos.Admin,Pos.Accountant">
+        <div class="nav-section">Administration</div>
+        <NavLink href="audit">Journal d'audit</NavLink>
+    </AuthorizeView>
+    <AuthorizeView Roles="Pos.Admin">
+        <NavLink href="droits">Droits d'accès</NavLink>
+    </AuthorizeView>
+</nav>

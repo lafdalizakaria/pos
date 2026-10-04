@@ -1,0 +1,55 @@
+@page "/"
+@inherits PageBase
+
+<PageTitle>Accueil - Newrest POS</PageTitle>
+<h1>Back-office Newrest POS</h1>
+<Notice Error="@Error" />
+
+@if (_me is not null)
+{
+    <div class="card">
+        <h2>Mon accès</h2>
+        <p><strong>@_me.Name</strong> — rôles : @string.Join(", ", _me.Roles)</p>
+        @if (_me.IsGlobal)
+        {
+            <p>Administrateur global : toutes les sociétés et tous les sites.</p>
+        }
+        else if (_me.Scopes.Count == 0)
+        {
+            <p class="warning">Aucun périmètre attribué : demandez à un administrateur de vous donner accès à une société ou un site.</p>
+        }
+        else
+        {
+            <ul>
+                @foreach (var s in _me.Scopes)
+                {
+                    <li>@Name(s.CompanyId) @(s.SiteId is { } site ? $"— site {SiteName(site)}" : "— toute la société")</li>
+                }
+            </ul>
+        }
+    </div>
+}
+
+<div class="tiles">
+    <a class="tile" href="menus"><strong>Menus du jour</strong><span>Préparer et publier les menus</span></a>
+    <a class="tile" href="convives"><strong>Convives &amp; badges</strong><span>Recherche, badges perdus, import</span></a>
+    <a class="tile" href="comptes"><strong>Comptes</strong><span>Soldes, recharges, corrections</span></a>
+    <a class="tile" href="tarifs"><strong>Tarifs</strong><span>Prix par site ou point de vente</span></a>
+</div>
+
+@code {
+    private CurrentUserDto? _me;
+    private IReadOnlyList<CompanyDto> _companies = [];
+    private IReadOnlyList<SiteDto> _sites = [];
+
+    protected override async Task LoadAsync()
+    {
+        _me = await Run<OrganizationService, CurrentUserDto>(s => s.GetCurrentUserAsync());
+        _companies = await Run<OrganizationService, IReadOnlyList<CompanyDto>>(s => s.ListCompaniesAsync()) ?? [];
+        _sites = await Run<OrganizationService, IReadOnlyList<SiteDto>>(s => s.ListSitesAsync()) ?? [];
+    }
+
+    private string Name(Guid companyId) => _companies.FirstOrDefault(c => c.Id == companyId)?.Name ?? companyId.ToString();
+
+    private string SiteName(Guid siteId) => _sites.FirstOrDefault(s => s.Id == siteId)?.Name ?? siteId.ToString();
+}

@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Newrest.Pos.Client.Core</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Newrest.Pos.Client.Data/Newrest.Pos.Client.Data.csproj" />
+    <ProjectReference Include="../Newrest.Pos.Devices/Newrest.Pos.Devices.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Newrest.Pos.Client.Core.Tests" />
+    <InternalsVisibleTo Include="Newrest.Pos.Scenarios.Tests" />
+  </ItemGroup>
+</Project>

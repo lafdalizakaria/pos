@@ -1,0 +1,27 @@
+@using System.Net.Http
+@using System.Net.Http.Json
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Components.Routing
+@using Microsoft.AspNetCore.Components.Web
+@using static Microsoft.AspNetCore.Components.Web.RenderMode
+@using Microsoft.AspNetCore.Components.Web.Virtualization
+@using Microsoft.JSInterop
+@using Newrest.Pos.BackOffice
+@using Newrest.Pos.BackOffice.Components
+@using Newrest.Pos.BackOffice.Components.Layout
+@using Newrest.Pos.BackOffice.Components.Shared
+@using Newrest.Pos.BackOffice.Ui
+@using Newrest.Pos.Contracts.V1
+@using Newrest.Pos.Application.Organization
+@using Newrest.Pos.Application.Catalog
+@using Newrest.Pos.Application.Menus
+@using Newrest.Pos.Application.Clients
+@using Newrest.Pos.Application.Accounts
+@using Newrest.Pos.Application.Auditing
+@using Newrest.Pos.Application.Sales
+@attribute [Authorize(Policy = Newrest.Pos.BackOffice.Security.AuthenticationSetup.BackOfficePolicy)]
+@using Newrest.Pos.Application.Vision
+@using Newrest.Pos.Application.Operations
+@using Newrest.Pos.Application.Compliance

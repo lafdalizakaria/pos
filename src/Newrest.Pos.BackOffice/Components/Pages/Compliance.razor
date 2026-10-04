@@ -1,0 +1,119 @@
+@page "/conformite"
+@inherits PageBase
+@inject TimeProvider Clock
+
+<PageTitle>Archives & conformité - Newrest POS</PageTitle>
+<h1>Archives fiscales et conformité</h1>
+<Notice Error="@Error" Success="@Success" />
+
+<section class="card">
+    <h2>Archives mensuelles signées</h2>
+    <p class="hint">Chaque archive scelle un mois d'une société : tickets (recalculables), clôtures Z, mouvements de comptes, points de contrôle de la
+        chaîne de chaque caisse ; signée (ECDSA). Les mois s'archivent dans l'ordre, à partir du @ArchiveService.GraceDays du mois suivant ; les tickets
+        arrivés après l'archivage figurent dans l'archive suivante. Copier chaque archive sur le stockage immuable (WORM) ; vérification hors ligne :
+        <code>Newrest.Pos.Migrator --verify-archive archive.zip --previous archive-precedente.zip</code>.</p>
+    @if (IsFinance)
+    {
+        <div class="toolbar">
+            <label>Société
+                <select @bind="_companyId">
+                    @foreach (var c in _companies) { <option value="@c.Id">@c.Name</option> }
+                </select>
+            </label>
+            <label>Mois <input type="month" @bind="_month" @bind:format="yyyy-MM" /></label>
+            <button disabled="@Busy" @onclick="CreateAsync">Archiver le mois</button>
+        </div>
+    }
+    <table>
+        <thead><tr><th>Société</th><th>Mois</th><th class="num">Tickets</th><th class="num">Taille</th><th>Empreinte (SHA-256)</th><th>Clé</th><th>Créée</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var a in _archives)
+            {
+                var check = _checks.GetValueOrDefault(a.Id);
+                <tr>
+                    <td>@a.CompanyName</td>
+                    <td>@($"{a.Year}-{a.Month:00}")</td>
+                    <td class="num">@a.TicketCount</td>
+                    <td class="num">@((a.SizeBytes / 1024m).ToString("0", System.Globalization.CultureInfo.GetCultureInfo("fr-FR"))) Ko</td>
+                    <td><code title="@a.Sha256">@a.Sha256[..16]…</code></td>
+                    <td><code>@a.KeyId</code></td>
+                    <td>@Messages.DateTime(a.CreatedAt) <span class="muted">@a.CreatedBy</span></td>
+                    <td class="actions">
+                        <a href="archives/@a.Id" download>Télécharger</a>
+                        <button class="link" disabled="@Busy" @onclick="() => VerifyAsync(a)">Vérifier</button>
+                        @if (check is not null)
+                        {
+                            <span class="@(check.IsValid ? "ok" : "negative")">@(check.IsValid ? "✔ intègre" : $"✘ {check.Issues.Count} anomalie(s)")</span>
+                            @if (!check.IsValid) { <ul>@foreach (var i in check.Issues.Take(10)) { <li>@i</li> }</ul> }
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</section>
+
+@if (IsAdmin)
+{
+    <section class="card">
+        <h2>Anonymisation des convives partis (loi 09-08)</h2>
+        <p class="hint">Convives inactifs, sans mouvement depuis la date choisie et dont les comptes sont clos à solde nul : nom, matricule et numéros de
+            badge sont remplacés par des identifiants neutres. Les tickets (pièces fiscales, immuables) gardent leur référence au convive devenu anonyme.
+            Simuler d'abord.</p>
+        <div class="toolbar">
+            <label>Inactifs avant le <input type="date" @bind="_cutoff" /></label>
+            <button disabled="@Busy" @onclick="() => AnonymizeAsync(true)">Simuler</button>
+            <button disabled="@(Busy || _simulated is null)" @onclick="() => AnonymizeAsync(false)">Anonymiser</button>
+        </div>
+        @if (_simulated is { } sim) { <p>@sim.Diners convive(s) et @sim.Badges badge(s) concernés@(sim.DryRun ? " (simulation)" : " : anonymisés").</p> }
+    </section>
+}
+
+@code {
+    private IReadOnlyList<CompanyDto> _companies = [];
+    private IReadOnlyList<ArchiveDto> _archives = [];
+    private readonly Dictionary<Guid, ArchiveVerificationDto> _checks = [];
+    private Guid _companyId;
+    private DateTime _month;
+    private DateOnly _cutoff;
+    private AnonymizationResult? _simulated;
+
+    protected override async Task LoadAsync()
+    {
+        var today = Clock.GetUtcNow().UtcDateTime;
+        _month = new DateTime(today.Year, today.Month, 1).AddMonths(-1);
+        _cutoff = DateOnly.FromDateTime(today).AddMonths(-12);
+        _companies = await Run<OrganizationService, IReadOnlyList<CompanyDto>>(s => s.ListCompaniesAsync()) ?? [];
+        _companyId = _companies.FirstOrDefault()?.Id ?? Guid.Empty;
+        await RefreshAsync();
+    }
+
+    private async Task RefreshAsync()
+    {
+        if (IsFinance)
+        {
+            _archives = await Run<ArchiveService, IReadOnlyList<ArchiveDto>>(s => s.ListAsync()) ?? [];
+        }
+    }
+
+    private async Task CreateAsync()
+    {
+        if (await Run<ArchiveService, ArchiveDto>(s => s.CreateAsync(new ArchiveCreate(_companyId, _month.Year, _month.Month))) is { } created)
+        {
+            Success = $"Archive {created.Year}-{created.Month:00} créée ({created.TicketCount} tickets) : la télécharger et la copier sur le stockage immuable.";
+            await RefreshAsync();
+        }
+    }
+
+    private async Task VerifyAsync(ArchiveDto archive)
+    {
+        if (await Run<ArchiveService, ArchiveVerificationDto>(s => s.VerifyAsync(archive.Id)) is { } result)
+        {
+            _checks[archive.Id] = result;
+        }
+    }
+
+    private async Task AnonymizeAsync(bool dryRun) =>
+        _simulated = await Run<PrivacyService, AnonymizationResult>(s => s.AnonymizeInactiveDinersAsync(new AnonymizationRequest(_cutoff, dryRun)),
+            dryRun ? null : "Anonymisation effectuée (journalisée).");
+}

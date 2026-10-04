@@ -1,0 +1,219 @@
+@page "/vision/modeles"
+@inherits PageBase
+@using System.Globalization
+@using Microsoft.AspNetCore.Components.Forms
+
+<PageTitle>Modèles vision - Newrest POS</PageTitle>
+<h1>Modèles et déploiement de la reconnaissance</h1>
+<Notice Error="@Error" Success="@Success" />
+
+<section class="card">
+    <h2>Modèles entraînés</h2>
+    <p class="hint">Un modèle est produit par <code>python -m training train</code> (fichiers <code>model.onnx</code> et <code>manifest.json</code>).
+        Importé, il reste en brouillon ; une fois publié, il peut être affecté aux sites. Les caisses le téléchargent, vérifient son empreinte
+        et l'installent à leur synchronisation suivante (5 min) ; l'ancien modèle reste installé pour un retour arrière.</p>
+    @if (IsAdmin)
+    {
+        <div class="toolbar">
+            <label>model.onnx <InputFile accept=".onnx" OnChange="e => _modelFile = e.File" /></label>
+            <label>manifest.json <InputFile accept=".json" OnChange="e => _manifestFile = e.File" /></label>
+            <button disabled="@(Busy || _modelFile is null || _manifestFile is null)" @onclick="UploadAsync">Importer</button>
+        </div>
+        @if (_unknown.Count > 0)
+        {
+            <p class="negative">Classes sans article au catalogue : @string.Join(", ", _unknown)</p>
+        }
+    }
+    <table>
+        <thead><tr><th>Version</th><th>Statut</th><th class="num">Articles</th><th class="num">mAP50</th><th class="num">Taille</th><th>Importé</th><th>Publié</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var m in _models)
+            {
+                <tr>
+                    <td><code>@m.Version</code></td>
+                    <td>@StatusLabel(m.Status)</td>
+                    <td class="num" title="@string.Join(", ", m.Classes)">@m.ClassCount</td>
+                    <td class="num">@(m.Map50 is { } map ? Messages.Percent(map) : "—")</td>
+                    <td class="num">@((m.SizeBytes / 1024m / 1024m).ToString("0.0", CultureInfo.GetCultureInfo("fr-FR"))) Mo</td>
+                    <td>@Messages.DateTime(m.UploadedAt) <span class="muted">@m.UploadedBy</span></td>
+                    <td>@(m.PublishedAt is { } p ? Messages.DateTime(p) : "—")</td>
+                    <td class="actions">
+                        @if (IsAdmin && m.Status == "Draft") { <button class="link" disabled="@Busy" @onclick="() => PublishAsync(m)">Publier</button> }
+                        @if (IsAdmin && m.Status != "Retired") { <button class="link" disabled="@Busy" @onclick="() => RetireAsync(m)">Retirer</button> }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</section>
+
+<section class="card">
+    <h2>Réglages par site</h2>
+    <p class="hint">Gemini : reconnaissance par Google (Internet, clé sur chaque poste). YOLO : modèle local, sans Internet. Hybride : YOLO, et Gemini
+        seulement quand YOLO hésite (confiance &lt; seuil hybride) ou qu'un article du menu est inconnu du modèle. Les seuils bas/haut règlent
+        l'écran de vente (en dessous du bas : catégorie seulement ; au-dessus du haut : ajout automatique). Voir les seuils suggérés sur la page
+        <a href="vision">Performance vision</a>.</p>
+    <table>
+        <thead><tr><th>Site</th><th>Activée</th><th>Moteur</th><th>Modèle</th><th class="num">Seuil bas</th><th class="num">Seuil haut</th><th class="num">Seuil hybride</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var row in _sites)
+            {
+                <tr>
+                    <td>@row.SiteName @if (!row.Configured) { <br /><span class="muted">réglages locaux des caisses</span> }</td>
+                    <td><input type="checkbox" @bind="row.Enabled" /></td>
+                    <td>
+                        <select @bind="row.Provider">
+                            <option value="Gemini">Gemini</option>
+                            <option value="Yolo">YOLO (local)</option>
+                            <option value="Hybrid">Hybride</option>
+                            <option value="Mock">Simulation</option>
+                        </select>
+                    </td>
+                    <td>
+                        @if (row.Provider is "Yolo" or "Hybrid")
+                        {
+                            <select @bind="row.ModelId">
+                                <option value="">Dernier publié@(Latest is { } l ? $" ({l.Version})" : "")</option>
+                                @foreach (var m in _models.Where(m => m.Status == "Published")) { <option value="@m.Id">@m.Version</option> }
+                            </select>
+                        }
+                        else { <span class="muted">—</span> }
+                    </td>
+                    <td class="num"><input class="price" type="number" step="0.01" min="0" max="1" @bind="row.Low" @bind:culture="CultureInfo.InvariantCulture" /></td>
+                    <td class="num"><input class="price" type="number" step="0.01" min="0" max="1" @bind="row.High" @bind:culture="CultureInfo.InvariantCulture" /></td>
+                    <td class="num"><input class="price" type="number" step="0.01" min="0" max="1" @bind="row.Hybrid" @bind:culture="CultureInfo.InvariantCulture" /></td>
+                    <td class="actions">@if (CanWrite) { <button class="link" disabled="@Busy" @onclick="() => SaveAsync(row)">Enregistrer</button> }</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</section>
+
+<section class="card">
+    <h2>État des caisses</h2>
+    <table>
+        <thead><tr><th>Caisse</th><th>Site</th><th>Attendu</th><th>Appliqué</th><th>Service</th><th>Dernier rapport</th><th>Erreur</th></tr></thead>
+        <tbody>
+            @foreach (var r in _registers)
+            {
+                <tr>
+                    <td><code>@r.RegisterPrefix</code> @r.RegisterName</td>
+                    <td>@r.SiteName</td>
+                    <td>@(r.ExpectedProvider is null ? "réglages locaux" : $"{r.ExpectedProvider} {r.ExpectedModelVersion}")</td>
+                    <td class="@(r.UpToDate ? "ok" : "negative")">@(r.Provider is null ? "—" : $"{r.Provider} {r.ModelVersion}") @(r.UpToDate ? "✔" : "")</td>
+                    <td>@(r.ReportedAt is null ? "—" : !r.ServiceReachable ? "injoignable" : r.ProviderReady ? "prêt" : "non prêt")</td>
+                    <td>@(r.ReportedAt is { } at ? Messages.DateTime(at) : "jamais")</td>
+                    <td class="negative">@r.Error</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</section>
+
+@code {
+    private IReadOnlyList<VisionModelDto> _models = [];
+    private List<SiteRow> _sites = [];
+    private IReadOnlyList<RegisterVisionStatusDto> _registers = [];
+    private IReadOnlyList<string> _unknown = [];
+    private IBrowserFile? _modelFile;
+    private IBrowserFile? _manifestFile;
+
+    private VisionModelDto? Latest => _models.Where(m => m.Status == "Published").MaxBy(m => m.PublishedAt);
+
+    protected override async Task LoadAsync()
+    {
+        _models = await Run<VisionModelService, IReadOnlyList<VisionModelDto>>(s => s.ListModelsAsync()) ?? [];
+        _sites = [.. (await Run<VisionModelService, IReadOnlyList<SiteVisionSettingsDto>>(s => s.ListSiteSettingsAsync()) ?? []).Select(SiteRow.From)];
+        _registers = await Run<VisionModelService, IReadOnlyList<RegisterVisionStatusDto>>(s => s.ListRegisterStatusAsync()) ?? [];
+    }
+
+    private async Task UploadAsync()
+    {
+        var temporary = Path.Combine(Path.GetTempPath(), "pos-model-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            string manifest;
+            using (var reader = new StreamReader(_manifestFile!.OpenReadStream(1024 * 1024)))
+            {
+                manifest = await reader.ReadToEndAsync();
+            }
+
+            await using (var file = File.Create(temporary))
+            {
+                await _modelFile!.OpenReadStream(VisionModelService.MaxModelBytes).CopyToAsync(file);
+            }
+
+            var result = await Run<VisionModelService, VisionModelUploadResult>(async s =>
+            {
+                await using var stream = File.OpenRead(temporary);
+                return await s.UploadAsync(stream, manifest);
+            }, "Modèle importé (brouillon) : vérifier sa mAP50 puis le publier.");
+            if (result is not null)
+            {
+                _unknown = result.UnknownArticleCodes;
+                await LoadAsync();
+            }
+        }
+        catch (IOException)
+        {
+            Error = "Fichier trop volumineux ou illisible (300 Mo maximum).";
+        }
+        finally
+        {
+            File.Delete(temporary);
+        }
+    }
+
+    private async Task PublishAsync(VisionModelDto model)
+    {
+        if (await Run<VisionModelService>(s => s.PublishAsync(model.Id), $"Modèle {model.Version} publié."))
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task RetireAsync(VisionModelDto model)
+    {
+        if (await Run<VisionModelService>(s => s.RetireAsync(model.Id), $"Modèle {model.Version} retiré."))
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task SaveAsync(SiteRow row)
+    {
+        var update = new SiteVisionSettingsUpdate(row.Enabled, row.Provider, Guid.TryParse(row.ModelId, out var id) ? id : null, row.Low, row.High, row.Hybrid);
+        if (await Run<VisionModelService>(s => s.UpdateSiteSettingsAsync(row.SiteId, update),
+                $"Réglages de {row.SiteName} enregistrés : appliqués par les caisses à leur prochaine synchronisation."))
+        {
+            await LoadAsync();
+        }
+    }
+
+    private static string StatusLabel(string status) => status switch
+    {
+        "Draft" => "Brouillon",
+        "Published" => "Publié",
+        "Retired" => "Retiré",
+        _ => status,
+    };
+
+    private sealed class SiteRow
+    {
+        public Guid SiteId { get; init; }
+        public string SiteName { get; init; } = "";
+        public bool Configured { get; init; }
+        public bool Enabled { get; set; }
+        public string Provider { get; set; } = "Gemini";
+        public string ModelId { get; set; } = "";
+        public decimal Low { get; set; }
+        public decimal High { get; set; }
+        public decimal Hybrid { get; set; }
+
+        public static SiteRow From(SiteVisionSettingsDto s) => new()
+        {
+            SiteId = s.SiteId, SiteName = s.SiteName, Configured = s.Configured, Enabled = s.Enabled, Provider = s.Provider,
+            ModelId = s.ModelId?.ToString() ?? "", Low = Math.Round(s.LowThreshold, 2), High = Math.Round(s.HighThreshold, 2), Hybrid = Math.Round(s.HybridMinConfidence, 2),
+        };
+    }
+}

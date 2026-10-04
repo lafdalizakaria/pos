@@ -1,0 +1,76 @@
+@page "/droits"
+@attribute [Authorize(Roles = "Pos.Admin")]
+@inherits PageBase
+
+<PageTitle>Droits d'accès - Newrest POS</PageTitle>
+<h1>Droits d'accès au back-office</h1>
+<p class="hint">Les rôles (Pos.Admin, Pos.Manager, Pos.Accountant, Pos.Viewer) sont attribués dans Entra ID. Ici, on définit le périmètre
+    (société entière ou site) de chaque utilisateur non administrateur.</p>
+<Notice Error="@Error" Success="@Success" />
+
+<section class="card">
+    <table>
+        <thead><tr><th>Utilisateur</th><th>Société</th><th>Site</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var s in _scopes)
+            {
+                <tr>
+                    <td>@s.UserName</td><td>@_companies.FirstOrDefault(c => c.Id == s.CompanyId)?.Name</td>
+                    <td>@(s.SiteId is { } site ? _sites.FirstOrDefault(x => x.Id == site)?.Name : "Toute la société")</td>
+                    <td class="actions"><button class="link danger" @onclick="() => RevokeAsync(s)">Retirer</button></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    <h2>Attribuer un périmètre</h2>
+    <div class="form">
+        <label>Utilisateur (UPN)<input @bind="_userName" placeholder="prenom.nom@newrest.ma" /></label>
+        <label>Société
+            <select @bind="_companyId">
+                @foreach (var c in _companies) { <option value="@c.Id">@c.Name</option> }
+            </select>
+        </label>
+        <label>Site
+            <select @bind="_siteId">
+                <option value="">Toute la société</option>
+                @foreach (var s in _sites.Where(s => s.CompanyId == _companyId)) { <option value="@s.Id">@s.Name</option> }
+            </select>
+        </label>
+    </div>
+    <button class="primary" disabled="@Busy" @onclick="GrantAsync">Attribuer</button>
+</section>
+
+@code {
+    private IReadOnlyList<AccessScopeDto> _scopes = [];
+    private IReadOnlyList<CompanyDto> _companies = [];
+    private IReadOnlyList<SiteDto> _sites = [];
+    private string _userName = "";
+    private Guid _companyId;
+    private Guid? _siteId;
+
+    protected override async Task LoadAsync()
+    {
+        _companies = await Run<OrganizationService, IReadOnlyList<CompanyDto>>(s => s.ListCompaniesAsync()) ?? [];
+        _sites = await Run<OrganizationService, IReadOnlyList<SiteDto>>(s => s.ListSitesAsync()) ?? [];
+        _companyId = _companyId == Guid.Empty ? _companies.FirstOrDefault()?.Id ?? Guid.Empty : _companyId;
+        _scopes = await Run<OrganizationService, IReadOnlyList<AccessScopeDto>>(s => s.ListScopesAsync()) ?? [];
+    }
+
+    private async Task GrantAsync()
+    {
+        if (await Run<OrganizationService, AccessScopeDto>(s => s.GrantScopeAsync(new AccessScopeCreate(_userName, _companyId, _siteId)),
+                "Périmètre attribué.") is not null)
+        {
+            _userName = "";
+            await LoadAsync();
+        }
+    }
+
+    private async Task RevokeAsync(AccessScopeDto scope)
+    {
+        if (await Run<OrganizationService>(s => s.RevokeScopeAsync(scope.Id), "Périmètre retiré."))
+        {
+            await LoadAsync();
+        }
+    }
+}

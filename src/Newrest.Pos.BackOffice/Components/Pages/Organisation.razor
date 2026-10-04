@@ -1,0 +1,172 @@
+@page "/organisation"
+@inherits PageBase
+
+<PageTitle>Sociétés & sites - Newrest POS</PageTitle>
+<h1>Sociétés &amp; sites</h1>
+<Notice Error="@Error" Success="@Success" />
+
+<div class="grid-2">
+    <section class="card">
+        <h2>Sociétés</h2>
+        <table>
+            <thead><tr><th>Code</th><th>Nom</th><th>ICE</th><th>Statut</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var c in _companies)
+                {
+                    <tr class="@(c.Id == _selected?.Id ? "selected" : null)">
+                        <td>@c.Code</td><td>@c.Name</td><td>@c.Ice</td><td>@Messages.Status(c.IsActive)</td>
+                        <td class="actions">
+                            <button class="link" @onclick="() => SelectAsync(c)">Sites</button>
+                            @if (IsAdmin) { <button class="link" @onclick="() => EditCompany(c)">Modifier</button> }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (IsAdmin)
+        {
+            <h3>@(_companyId is null ? "Nouvelle société" : "Modifier la société")</h3>
+            <div class="form">
+                <label>Code<input @bind="_company.Code" disabled="@(_companyId is not null)" maxlength="16" /></label>
+                <label>Nom<input @bind="_company.Name" /></label>
+                <label>Raison sociale<input @bind="_company.LegalName" /></label>
+                <label>ICE<input @bind="_company.Ice" maxlength="15" /></label>
+                <label>IF<input @bind="_company.TaxId" /></label>
+                <label>RC<input @bind="_company.TradeRegister" /></label>
+                <label class="wide">Adresse<input @bind="_company.Address" /></label>
+                <label class="check"><input type="checkbox" @bind="_company.IsActive" /> Active</label>
+            </div>
+            <button class="primary" disabled="@Busy" @onclick="SaveCompanyAsync">Enregistrer</button>
+            <button class="link" @onclick="NewCompany">Annuler</button>
+        }
+    </section>
+
+    <section class="card">
+        <h2>Sites @(_selected is null ? "" : $"— {_selected.Name}")</h2>
+        @if (_selected is null)
+        {
+            <p>Choisissez une société.</p>
+        }
+        else
+        {
+            <table>
+                <thead><tr><th>Code</th><th>Nom</th><th>Ville</th><th>Fuseau</th><th>Statut</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var s in _sites)
+                    {
+                        <tr>
+                            <td>@s.Code</td><td>@s.Name</td><td>@s.City</td><td>@s.TimeZone</td><td>@Messages.Status(s.IsActive)</td>
+                            <td class="actions">@if (CanWrite) { <button class="link" @onclick="() => EditSite(s)">Modifier</button> }</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            @if (CanWrite)
+            {
+                <h3>@(_siteId is null ? "Nouveau site" : "Modifier le site")</h3>
+                <div class="form">
+                    <label>Code<input @bind="_site.Code" disabled="@(_siteId is not null)" /></label>
+                    <label>Nom<input @bind="_site.Name" /></label>
+                    <label>Ville<input @bind="_site.City" /></label>
+                    <label>Fuseau horaire<input @bind="_site.TimeZone" /></label>
+                    <label class="wide">Adresse<input @bind="_site.Address" /></label>
+                    <label class="check"><input type="checkbox" @bind="_site.IsActive" /> Actif</label>
+                </div>
+                <button class="primary" disabled="@Busy" @onclick="SaveSiteAsync">Enregistrer</button>
+                <button class="link" @onclick="NewSite">Annuler</button>
+            }
+        }
+    </section>
+</div>
+
+@code {
+    private IReadOnlyList<CompanyDto> _companies = [];
+    private IReadOnlyList<SiteDto> _sites = [];
+    private CompanyDto? _selected;
+    private Guid? _companyId;
+    private Guid? _siteId;
+    private CompanyForm _company = new();
+    private SiteForm _site = new();
+
+    protected override async Task LoadAsync()
+    {
+        _companies = await Run<OrganizationService, IReadOnlyList<CompanyDto>>(s => s.ListCompaniesAsync()) ?? [];
+        if (_selected is null && _companies.Count > 0)
+        {
+            await SelectAsync(_companies[0]);
+        }
+    }
+
+    private async Task SelectAsync(CompanyDto company)
+    {
+        _selected = company;
+        NewSite();
+        _sites = await Run<OrganizationService, IReadOnlyList<SiteDto>>(s => s.ListSitesAsync(company.Id)) ?? [];
+    }
+
+    private void NewCompany() => (_companyId, _company) = (null, new CompanyForm());
+
+    private void EditCompany(CompanyDto c) => (_companyId, _company) = (c.Id, new CompanyForm
+    {
+        Code = c.Code, Name = c.Name, LegalName = c.LegalName, Ice = c.Ice, TaxId = c.TaxId, TradeRegister = c.TradeRegister,
+        Address = c.Address, IsActive = c.IsActive,
+    });
+
+    private async Task SaveCompanyAsync()
+    {
+        var request = new CompanyUpsert(_company.Code, _company.Name, _company.LegalName, _company.Ice, _company.TaxId,
+            _company.TradeRegister, _company.Address, _company.IsActive);
+        var id = _companyId;
+        if (await Run<OrganizationService>(s => id is { } existing ? s.UpdateCompanyAsync(existing, request) : s.CreateCompanyAsync(request),
+                "Société enregistrée."))
+        {
+            NewCompany();
+            await LoadAsync();
+        }
+    }
+
+    private void NewSite() => (_siteId, _site) = (null, new SiteForm());
+
+    private void EditSite(SiteDto s) => (_siteId, _site) = (s.Id, new SiteForm
+    {
+        Code = s.Code, Name = s.Name, City = s.City, Address = s.Address, TimeZone = s.TimeZone, IsActive = s.IsActive,
+    });
+
+    private async Task SaveSiteAsync()
+    {
+        if (_selected is null)
+        {
+            return;
+        }
+
+        var request = new SiteUpsert(_selected.Id, _site.Code, _site.Name, _site.City, _site.Address, _site.TimeZone, _site.IsActive);
+        var id = _siteId;
+        if (await Run<OrganizationService>(s => id is { } existing ? s.UpdateSiteAsync(existing, request) : s.CreateSiteAsync(request),
+                "Site enregistré."))
+        {
+            await SelectAsync(_selected);
+        }
+    }
+
+    private sealed class CompanyForm
+    {
+        public string Code { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string LegalName { get; set; } = "";
+        public string? Ice { get; set; }
+        public string? TaxId { get; set; }
+        public string? TradeRegister { get; set; }
+        public string? Address { get; set; }
+        public bool IsActive { get; set; } = true;
+    }
+
+    private sealed class SiteForm
+    {
+        public string Code { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string City { get; set; } = "";
+        public string? Address { get; set; }
+        public string? TimeZone { get; set; } = "Africa/Casablanca";
+        public bool IsActive { get; set; } = true;
+    }
+}

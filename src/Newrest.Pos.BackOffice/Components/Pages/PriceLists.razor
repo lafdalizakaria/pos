@@ -1,0 +1,206 @@
+@page "/tarifs"
+@inherits PageBase
+
+<PageTitle>Tarifs - Newrest POS</PageTitle>
+<h1>Tarifs</h1>
+<p class="hint">Prix TTC surchargeant le prix de base : le plus spécifique s'applique (point de vente &gt; site &gt; société), puis le plus récent.</p>
+<Notice Error="@Error" Success="@Success" />
+
+<div class="grid-2">
+    <section class="card">
+        <h2>Listes de prix</h2>
+        <table>
+            <thead><tr><th>Code</th><th>Nom</th><th>Portée</th><th>Validité</th><th>Prix</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var l in _lists)
+                {
+                    <tr class="@(l.Id == _selected?.Id ? "selected" : null) @(l.IsActive ? null : "inactive")">
+                        <td>@l.Code</td><td>@l.Name</td><td>@Scope(l)</td>
+                        <td>@Messages.Date(l.ValidFrom) → @(l.ValidTo is { } to ? Messages.Date(to) : "…")</td>
+                        <td>@l.Overrides.Count</td>
+                        <td class="actions"><button class="link" @onclick="() => Select(l)">Ouvrir</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (CanWrite)
+        {
+            <h3>Nouvelle liste</h3>
+            <div class="form">
+                <label>Code<input @bind="_new.Code" /></label>
+                <label>Nom<input @bind="_new.Name" /></label>
+                <label>Société
+                    <select @bind="_new.CompanyId">
+                        @foreach (var c in _companies) { <option value="@c.Id">@c.Name</option> }
+                    </select>
+                </label>
+                <label>Site
+                    <select @bind="_new.SiteId">
+                        <option value="">Toute la société</option>
+                        @foreach (var s in _sites.Where(s => s.CompanyId == _new.CompanyId)) { <option value="@s.Id">@s.Name</option> }
+                    </select>
+                </label>
+                <label>Point de vente
+                    <select @bind="_new.PointOfSaleId">
+                        <option value="">Tout le site</option>
+                        @foreach (var p in _pointsOfSale.Where(p => p.SiteId == _new.SiteId)) { <option value="@p.Id">@p.Name</option> }
+                    </select>
+                </label>
+                <label>Du<input type="date" @bind="_new.ValidFrom" /></label>
+                <label>Au (optionnel)<input type="date" @bind="_new.ValidTo" /></label>
+            </div>
+            <button class="primary" disabled="@Busy" @onclick="CreateAsync">Créer</button>
+        }
+    </section>
+
+    <section class="card">
+        @if (_selected is null)
+        {
+            <p>Ouvrez une liste pour voir et modifier ses prix.</p>
+        }
+        else
+        {
+            <h2>@_selected.Name</h2>
+            @if (CanWrite)
+            {
+                <div class="form">
+                    <label>Nom<input @bind="_edit.Name" /></label>
+                    <label>Du<input type="date" @bind="_edit.ValidFrom" /></label>
+                    <label>Au<input type="date" @bind="_edit.ValidTo" /></label>
+                    <label class="check"><input type="checkbox" @bind="_edit.IsActive" /> Active</label>
+                </div>
+                <button class="primary" disabled="@Busy" @onclick="UpdateAsync">Enregistrer la liste</button>
+            }
+            <table>
+                <thead><tr><th>Article</th><th class="num">Prix TTC</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var o in _selected.Overrides)
+                    {
+                        <tr>
+                            <td><code>@o.ArticleCode</code> @o.ArticleName</td><td class="num">@Messages.Mad(o.Price)</td>
+                            <td class="actions">@if (CanWrite) { <button class="link danger" @onclick="() => RemoveAsync(o)">Retirer</button> }</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            @if (CanWrite)
+            {
+                <h3>Ajouter / modifier un prix</h3>
+                <div class="form">
+                    <label>Article
+                        <select @bind="_articleId">
+                            @foreach (var a in _articles) { <option value="@a.Id">@a.Code — @a.Name (base @Messages.Mad(a.BasePrice))</option> }
+                        </select>
+                    </label>
+                    <label>Prix TTC (MAD)<input type="number" step="0.01" min="0" @bind="_price" /></label>
+                </div>
+                <button class="primary" disabled="@Busy" @onclick="SetPriceAsync">Appliquer</button>
+            }
+        }
+    </section>
+</div>
+
+@code {
+    private IReadOnlyList<PriceListDto> _lists = [];
+    private IReadOnlyList<CompanyDto> _companies = [];
+    private IReadOnlyList<SiteDto> _sites = [];
+    private IReadOnlyList<PointOfSaleDto> _pointsOfSale = [];
+    private IReadOnlyList<ArticleDto> _articles = [];
+    private PriceListDto? _selected;
+    private NewList _new = new();
+    private EditList _edit = new();
+    private Guid _articleId;
+    private decimal _price;
+
+    protected override async Task LoadAsync()
+    {
+        _companies = await Run<OrganizationService, IReadOnlyList<CompanyDto>>(s => s.ListCompaniesAsync()) ?? [];
+        _sites = await Run<OrganizationService, IReadOnlyList<SiteDto>>(s => s.ListSitesAsync()) ?? [];
+        _pointsOfSale = await Run<OrganizationService, IReadOnlyList<PointOfSaleDto>>(s => s.ListPointsOfSaleAsync()) ?? [];
+        _articles = (await Run<CatalogService, PagedResult<ArticleDto>>(s => s.ListArticlesAsync(null, null, true, 1, 200)))?.Items ?? [];
+        _articleId = _articles.FirstOrDefault()?.Id ?? Guid.Empty;
+        _new = new NewList { CompanyId = _companies.FirstOrDefault()?.Id ?? Guid.Empty };
+        await RefreshAsync();
+    }
+
+    private async Task RefreshAsync()
+    {
+        _lists = await Run<CatalogService, IReadOnlyList<PriceListDto>>(s => s.ListPriceListsAsync()) ?? [];
+        if (_selected is not null)
+        {
+            Select(_lists.FirstOrDefault(l => l.Id == _selected.Id) ?? _selected);
+        }
+    }
+
+    private string Scope(PriceListDto l) =>
+        l.PointOfSaleId is { } p ? $"PDV {_pointsOfSale.FirstOrDefault(x => x.Id == p)?.Name}"
+        : l.SiteId is { } s ? $"Site {_sites.FirstOrDefault(x => x.Id == s)?.Name}"
+        : $"Société {_companies.FirstOrDefault(x => x.Id == l.CompanyId)?.Code}";
+
+    private void Select(PriceListDto list)
+    {
+        _selected = list;
+        _edit = new EditList { Name = list.Name, ValidFrom = list.ValidFrom, ValidTo = list.ValidTo, IsActive = list.IsActive };
+    }
+
+    private async Task CreateAsync()
+    {
+        var created = await Run<CatalogService, PriceListDto>(s => s.CreatePriceListAsync(new PriceListCreate(_new.Code, _new.Name, _new.CompanyId,
+            _new.SiteId, _new.PointOfSaleId, _new.ValidFrom, _new.ValidTo)), "Liste créée.");
+        if (created is not null)
+        {
+            Select(created);
+            await RefreshAsync();
+        }
+    }
+
+    private async Task UpdateAsync()
+    {
+        var id = _selected!.Id;
+        if (await Run<CatalogService, PriceListDto>(s => s.UpdatePriceListAsync(id, new PriceListUpdate(_edit.Name, _edit.ValidFrom, _edit.ValidTo,
+                _edit.IsActive)), "Liste enregistrée.") is { } updated)
+        {
+            Select(updated);
+            await RefreshAsync();
+        }
+    }
+
+    private async Task SetPriceAsync()
+    {
+        var id = _selected!.Id;
+        if (await Run<CatalogService, PriceListDto>(s => s.SetPriceAsync(id, _articleId, _price), "Prix appliqué.") is { } updated)
+        {
+            Select(updated);
+            await RefreshAsync();
+        }
+    }
+
+    private async Task RemoveAsync(PriceOverrideDto o)
+    {
+        var id = _selected!.Id;
+        if (await Run<CatalogService, PriceListDto>(s => s.RemovePriceAsync(id, o.ArticleId), "Prix retiré.") is { } updated)
+        {
+            Select(updated);
+            await RefreshAsync();
+        }
+    }
+
+    private sealed class NewList
+    {
+        public string Code { get; set; } = "";
+        public string Name { get; set; } = "";
+        public Guid CompanyId { get; set; }
+        public Guid? SiteId { get; set; }
+        public Guid? PointOfSaleId { get; set; }
+        public DateOnly ValidFrom { get; set; } = DateOnly.FromDateTime(DateTime.Today);
+        public DateOnly? ValidTo { get; set; }
+    }
+
+    private sealed class EditList
+    {
+        public string Name { get; set; } = "";
+        public DateOnly ValidFrom { get; set; }
+        public DateOnly? ValidTo { get; set; }
+        public bool IsActive { get; set; }
+    }
+}
