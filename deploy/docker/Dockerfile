@@ -11,9 +11,11 @@ RUN --mount=type=secret,id=extra_ca,required=false \
 WORKDIR /src
 COPY global.json Directory.Build.props Directory.Packages.props Newrest.Pos.slnx ./
 COPY src/ src/
-RUN dotnet publish src/Newrest.Pos.Api -c Release -o /out/api /p:UseAppHost=false \
- && dotnet publish src/Newrest.Pos.BackOffice -c Release -o /out/backoffice /p:UseAppHost=false \
- && dotnet publish src/Newrest.Pos.Migrator -c Release -o /out/migrator /p:UseAppHost=false
+# Release version (set by the release workflow from the git tag).
+ARG VERSION=1.0.0
+RUN dotnet publish src/Newrest.Pos.Api -c Release -o /out/api /p:UseAppHost=false /p:Version=$VERSION \
+ && dotnet publish src/Newrest.Pos.BackOffice -c Release -o /out/backoffice /p:UseAppHost=false /p:Version=$VERSION \
+ && dotnet publish src/Newrest.Pos.Migrator -c Release -o /out/migrator /p:UseAppHost=false /p:Version=$VERSION
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS api
 WORKDIR /app
