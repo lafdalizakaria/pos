@@ -191,7 +191,10 @@ les réglages du site ; ils s'appliquent à la synchronisation suivante.
 
 ## Mise en production du serveur (phase 6)
 
-1. Images : `docker build -f deploy/docker/Dockerfile --target api|backoffice|migrator` (aussi produites par la CI).
+1. Images : publier une version par un tag — `git tag v1.0.0 && git push origin v1.0.0`. Le workflow `release.yml` rejoue
+   toute la CI, pousse `newrest-pos-api|backoffice|migrator:<version>` (GitHub Container Registry par défaut ; autre
+   registre : variable `REGISTRY` + secrets `REGISTRY_USERNAME` / `REGISTRY_PASSWORD`) et crée la release GitHub avec le
+   paquet caisse et les commandes de déploiement. À la main : `docker build -f deploy/docker/Dockerfile --target <cible> --build-arg VERSION=<x.y.z>`.
 2. Paramètres : `deploy/docker/production.env.example` (secrets depuis le coffre). En `Production`, l'API et le back-office
    **refusent de démarrer** avec une configuration incomplète ou de développement et listent tous les problèmes.
 3. Chaque version : `docker compose ... run --rm migrator` (compte `pos_migrator`) **puis** redémarrage de l'API et du back-office.

@@ -1,0 +1,127 @@
+name: Release
+
+# Publishes a version when a tag v<major>.<minor>.<patch> is pushed:
+#   git tag v1.0.0 && git push origin v1.0.0
+# 1. the full CI runs again on the tagged commit (build, tests, security audit, packages);
+# 2. the server images are pushed to the registry, tagged <version> and <commit sha>;
+# 3. a GitHub release is created with the register package (zip + SHA-256) and the deployment commands.
+# Registry: GitHub Container Registry by default (no secret needed). For another registry (e.g. Azure Container
+# Registry), set the repository variable REGISTRY (e.g. newrest.azurecr.io) and the secrets REGISTRY_USERNAME and
+# REGISTRY_PASSWORD. Deployment itself stays a deliberate step (docs/runbook.md).
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    name: Full CI on the tagged commit
+    uses: ./.github/workflows/ci.yml
+
+  images:
+    name: Server images
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      registry: ${{ steps.meta.outputs.registry }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version and registry
+        id: meta
+        run: |
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          registry="${{ vars.REGISTRY }}"
+          echo "registry=${registry:-ghcr.io/${GITHUB_REPOSITORY_OWNER,,}}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GitHub Container Registry
+        if: vars.REGISTRY == ''
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Log in to the configured registry
+        if: vars.REGISTRY != ''
+        env:
+          REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+        run: echo "$REGISTRY_PASSWORD" | docker login "${{ vars.REGISTRY }}" -u "$REGISTRY_USERNAME" --password-stdin
+
+      - name: Build and push (API, back-office, migrator)
+        env:
+          REGISTRY: ${{ steps.meta.outputs.registry }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          for target in api backoffice migrator; do
+            image="$REGISTRY/newrest-pos-$target"
+            docker build -f deploy/docker/Dockerfile --target "$target" --build-arg VERSION="$VERSION" \
+              --label org.opencontainers.image.version="$VERSION" \
+              --label org.opencontainers.image.revision="$GITHUB_SHA" \
+              --label org.opencontainers.image.source="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+              -t "$image:$VERSION" -t "$image:sha-${GITHUB_SHA::7}" .
+            docker push "$image:$VERSION"
+            docker push "$image:sha-${GITHUB_SHA::7}"
+          done
+
+      - name: The released API image refuses a development configuration
+        env:
+          IMAGE: ${{ steps.meta.outputs.registry }}/newrest-pos-api:${{ steps.meta.outputs.version }}
+        run: |
+          if docker run --rm -e ConnectionStrings__PosDb="Server=x;User Id=sa;Password=y" "$IMAGE" 2> refusal.txt; then
+            echo "::error::The API started with an invalid production configuration"; exit 1
+          fi
+          grep -q "Configuration de production invalide" refusal.txt
+
+  release:
+    name: GitHub release with the register package
+    needs: images
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Register package (Windows x64, self-contained)
+        run: deploy/register/build-package.sh "${GITHUB_REF_NAME#v}" artifacts
+
+      - name: Release notes
+        env:
+          REGISTRY: ${{ needs.images.outputs.registry }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          cat > notes.md <<NOTES
+          ## Images serveur
+          - \`$REGISTRY/newrest-pos-api:$version\`
+          - \`$REGISTRY/newrest-pos-backoffice:$version\`
+          - \`$REGISTRY/newrest-pos-migrator:$version\`
+
+          ## Déploiement (docs/runbook.md)
+          \`\`\`bash
+          export REGISTRY=$REGISTRY VERSION=$version
+          docker compose -f deploy/docker/docker-compose.prod.yml --env-file production.env run --rm migrator
+          docker compose -f deploy/docker/docker-compose.prod.yml --env-file production.env up -d api backoffice
+          \`\`\`
+
+          ## Caisses
+          \`newrest-pos-register-$version.zip\` (empreinte dans le fichier \`.sha256\`), puis sur chaque poste, en administrateur :
+          \`.\\install-register.ps1 -ServerUrl https://<api>/ ...\` (deploy/register/README.md).
+          NOTES
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" artifacts/* --title "Newrest POS ${GITHUB_REF_NAME#v}" --notes-file notes.md --verify-tag
