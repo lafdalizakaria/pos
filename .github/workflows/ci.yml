@@ -86,7 +86,7 @@ jobs:
           # Application: API tests + end-to-end scenarios (supervision, archives, deployment run through the real API)
           python3 deploy/ci/coverage_gate.py ./TestResults 0.80 Newrest.Pos.Application
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: test-results
@@ -117,7 +117,7 @@ jobs:
       - name: Tests (mock, YOLO with a test ONNX model, fake Gemini client; no network, no key)
         run: uv run pytest -q --junitxml=../TestResults/vision/pytest.xml
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: vision-test-results
@@ -178,7 +178,7 @@ jobs:
       - name: Register package (Windows x64, self-contained)
         run: deploy/register/build-package.sh "1.0.${{ github.run_number }}" artifacts
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: register-package
           path: artifacts/
