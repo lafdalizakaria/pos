@@ -1,8 +1,8 @@
 <Project>
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
-    <EfVersion>10.0.12</EfVersion>
-    <MsExtVersion>10.0.12</MsExtVersion>
+    <EfVersion>10.0.14</EfVersion>
+    <MsExtVersion>10.0.14</MsExtVersion>
   </PropertyGroup>
   <ItemGroup>
     <!-- Data -->
@@ -46,7 +46,7 @@
     <PackageVersion Include="System.Text.Encoding.CodePages" Version="$(MsExtVersion)" />
     <PackageVersion Include="Microsoft.Extensions.Http" Version="$(MsExtVersion)" />
     <!-- Tests -->
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
     <!-- FluentAssertions pinned to 7.x: v8+ requires a commercial licence (Xceed). -->
