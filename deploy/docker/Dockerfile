@@ -4,7 +4,7 @@
 #   docker build -f deploy/docker/Dockerfile --target migrator   -t newrest-pos-migrator .
 # The register (WPF) and its vision service are Windows packages: see deploy/register.
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:11.0 AS build
 # Behind a TLS-inspecting corporate proxy: docker build --secret id=extra_ca,src=<proxy-ca.crt> ...
 RUN --mount=type=secret,id=extra_ca,required=false \
     if [ -f /run/secrets/extra_ca ]; then cp /run/secrets/extra_ca /usr/local/share/ca-certificates/extra-ca.crt && update-ca-certificates; fi
