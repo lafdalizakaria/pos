@@ -17,7 +17,7 @@ RUN dotnet publish src/Newrest.Pos.Api -c Release -o /out/api /p:UseAppHost=fals
  && dotnet publish src/Newrest.Pos.BackOffice -c Release -o /out/backoffice /p:UseAppHost=false /p:Version=$VERSION \
  && dotnet publish src/Newrest.Pos.Migrator -c Release -o /out/migrator /p:UseAppHost=false /p:Version=$VERSION
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS api
+FROM mcr.microsoft.com/dotnet/aspnet:11.0 AS api
 WORKDIR /app
 COPY --from=build /out/api .
 ENV ASPNETCORE_URLS=http://+:8080 ASPNETCORE_ENVIRONMENT=Production DOTNET_gcServer=1
@@ -25,7 +25,7 @@ USER $APP_UID
 EXPOSE 8080
 ENTRYPOINT ["dotnet", "Newrest.Pos.Api.dll"]
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS backoffice
+FROM mcr.microsoft.com/dotnet/aspnet:11.0 AS backoffice
 WORKDIR /app
 COPY --from=build /out/backoffice .
 ENV ASPNETCORE_URLS=http://+:8080 ASPNETCORE_ENVIRONMENT=Production
