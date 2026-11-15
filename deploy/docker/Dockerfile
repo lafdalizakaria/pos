@@ -33,7 +33,7 @@ USER $APP_UID
 EXPOSE 8080
 ENTRYPOINT ["dotnet", "Newrest.Pos.BackOffice.dll"]
 
-FROM mcr.microsoft.com/dotnet/runtime:10.0 AS migrator
+FROM mcr.microsoft.com/dotnet/runtime:11.0 AS migrator
 WORKDIR /app
 COPY --from=build /out/migrator .
 ENV DOTNET_ENVIRONMENT=Production
